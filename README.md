@@ -20,6 +20,8 @@ npm test
 
 需要 Node.js 20。
 
+Windows CI：推送 / PR 到 `main` 时会跑 typecheck、测试与 `electron-vite` 构建。
+
 ## 打包（Windows）
 
 ```text
@@ -27,3 +29,5 @@ npm run dist
 ```
 
 产物在 `release/`：免安装 `MinecraftPOVViewer-*-portable.exe`，以及可选 NSIS 安装包。内置 `ffmpeg-static`。用户机器不需要 Node.js。
+
+本地真实项目请另存为 `samples/project.json`（已 gitignore）；仓库只保留 `project.example.json`。

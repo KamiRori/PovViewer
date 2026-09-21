@@ -6,4 +6,5 @@ release
 *.log*
 .eslintcache
 minecraft-pov-viewer/
+samples/project.json
 
