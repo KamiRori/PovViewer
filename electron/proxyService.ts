@@ -66,6 +66,44 @@ export class ProxyService {
     return this.statuses.get(this.statusKey(sourcePath, kind)) ?? null
   }
 
+  /**
+   * Return a ready proxy if one already exists on disk / in memory.
+   * Never starts encoding — critical for multi‑hour OBS files.
+   */
+  async lookupPreview(sourcePath: string): Promise<ProxyStatus | null> {
+    const kind: ProxyKind = 'preview'
+    const key = this.statusKey(sourcePath, kind)
+    const existing = this.statuses.get(key)
+    if (existing?.status === 'ready' && existing.proxyPath) {
+      try {
+        await access(existing.proxyPath)
+        return existing
+      } catch {
+        // fall through
+      }
+    }
+    if (existing?.status === 'pending') return existing
+
+    let info: { size: number; mtimeMs: number }
+    try {
+      const s = await stat(sourcePath)
+      info = { size: s.size, mtimeMs: s.mtimeMs }
+    } catch {
+      return null
+    }
+
+    const dir = await this.proxiesDir()
+    const proxyPath = join(dir, `${this.cacheKey(sourcePath, kind, info.size, info.mtimeMs)}.mp4`)
+    try {
+      await access(proxyPath)
+      const ready: ProxyStatus = { kind, status: 'ready', sourcePath, proxyPath }
+      this.statuses.set(key, ready)
+      return ready
+    } catch {
+      return null
+    }
+  }
+
   async ensurePreview(sourcePath: string): Promise<ProxyStatus> {
     const kind: ProxyKind = 'preview'
     const key = this.statusKey(sourcePath, kind)

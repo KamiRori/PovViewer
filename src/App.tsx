@@ -110,29 +110,22 @@ export function App() {
 
   async function applyFastDurations(paths: string[]): Promise<void> {
     if (paths.length === 0) return
-    let ready = 0
-    let failed = 0
-    setHint(`正在读取时长 0/${paths.length}…`)
+    setHint(`正在读取时长（${paths.length}）…`)
     try {
-      for (let index = 0; index < paths.length; index += 1) {
-        const filePath = paths[index]
-        setHint(`正在读取时长 ${index + 1}/${paths.length}…`)
-        const results = await window.povApi.probeMediaDurations([filePath])
-        const entry = results[0]
-        if (entry?.duration !== null && entry?.duration !== undefined && Number.isFinite(entry.duration)) {
-          setDurationsByPath([{ filePath: entry.filePath, duration: entry.duration }])
-          ready += 1
-          // Warm a poster so the grid is not black while cards mount.
-          void window.povApi.ensurePoster(filePath, Math.min(5, Math.max(0.5, entry.duration * 0.01)))
-        } else {
-          failed += 1
-          console.warn('[media] duration probe missed', filePath, entry?.error, entry?.method)
-        }
+      // Parallel moov/ffmpeg duration probes — do not wait on poster/proxy encodes.
+      const results = await window.povApi.probeMediaDurations(paths)
+      const ready = results
+        .filter((entry) => entry.duration !== null && Number.isFinite(entry.duration))
+        .map((entry) => ({ filePath: entry.filePath, duration: entry.duration as number }))
+      if (ready.length > 0) setDurationsByPath(ready)
+      for (const entry of ready) {
+        void window.povApi.ensurePoster(entry.filePath, 1)
       }
+      const failed = paths.length - ready.length
       setHint(
         failed > 0
-          ? `时长就绪 ${ready}/${paths.length}（${failed} 个失败）；网格预览生成中…`
-          : `时长就绪 ${ready}/${paths.length}；网格预览生成中…`
+          ? `时长就绪 ${ready.length}/${paths.length}（${failed} 失败）。长视频请点「生成预览代理」后再流畅网格播放。`
+          : `时长就绪 ${ready.length}/${paths.length}。长视频网格流畅播放请点「生成预览代理」。`
       )
     } catch (error) {
       console.error('[media] probe durations failed', error)

@@ -34,13 +34,11 @@ export class PosterService {
     return this.dirReady
   }
 
-  private cacheKey(sourcePath: string, atSeconds: number): string {
+  private cacheKey(sourcePath: string, _atSeconds: number): string {
     const hash = createHash('sha1')
     hash.update(sourcePath.replace(/\\/g, '/').toLowerCase())
-    hash.update('|')
-    // Coarse bucket: one poster per ~5s of timeline is enough for grid glance.
-    hash.update(String(Math.round(atSeconds / 5) * 5))
-    hash.update('|poster-480-v2')
+    // One poster per source file (fixed early frame) — scrubbing must not re-encode.
+    hash.update('|poster-320-t1-v3')
     return hash.digest('hex')
   }
 
@@ -49,9 +47,10 @@ export class PosterService {
     return `data:image/jpeg;base64,${bytes.toString('base64')}`
   }
 
-  async ensurePoster(sourcePath: string, atSeconds = 1): Promise<PosterStatus> {
+  async ensurePoster(sourcePath: string, _atSeconds = 1): Promise<PosterStatus> {
     const run = async (): Promise<PosterStatus> => {
-      const safeAt = Number.isFinite(atSeconds) && atSeconds > 0 ? atSeconds : 1
+      // Always grab ~1s in — cheap keyframe seek, independent of timeline scrub.
+      const safeAt = 1
       const key = this.cacheKey(sourcePath, safeAt)
       const cached = this.cache.get(key)
       if (cached?.status === 'ready' && cached.posterPath && cached.dataUrl) {
@@ -145,9 +144,9 @@ function extractPoster(
       '-frames:v',
       '1',
       '-vf',
-      'scale=480:-2',
+      'scale=320:-2',
       '-q:v',
-      '7',
+      '8',
       '-y',
       output
     ]
@@ -156,7 +155,7 @@ function extractPoster(
     const timer = setTimeout(() => {
       child.kill()
       reject(new Error('生成封面超时'))
-    }, 90_000)
+    }, 25_000)
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString()
       if (stderr.length > 4000) stderr = stderr.slice(-4000)

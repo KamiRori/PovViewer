@@ -107,7 +107,7 @@ export async function probeFileDuration(filePath: string): Promise<MediaDuration
 
 export async function probeFileDurations(
   paths: readonly string[],
-  concurrency = 2
+  concurrency = 4
 ): Promise<MediaDurationResult[]> {
   const results: MediaDurationResult[] = new Array(paths.length)
   let next = 0

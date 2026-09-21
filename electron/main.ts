@@ -260,7 +260,7 @@ function registerIpc(): void {
     if (!Array.isArray(paths)) return []
     const list = paths.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
     // Caller often probes one path at a time for progressive UI; keep concurrency low when batched.
-    return probeFileDurations(list, Math.min(2, Math.max(1, list.length)))
+    return probeFileDurations(list, Math.min(4, Math.max(1, list.length)))
   })
 
   ipcMain.handle(IpcChannel.ensurePoster, async (_event, filePath: unknown, atSeconds: unknown) => {
@@ -305,9 +305,13 @@ function registerIpc(): void {
     return status
   })
 
-  ipcMain.handle(IpcChannel.getPreviewProxyStatus, (_event, filePath: unknown) => {
+  ipcMain.handle(IpcChannel.getPreviewProxyStatus, async (_event, filePath: unknown) => {
     if (typeof filePath !== 'string' || filePath.trim() === '') return null
-    return proxyService.getStatus(filePath, 'preview')
+    const status = await proxyService.lookupPreview(filePath)
+    if (status?.status === 'ready' && status.proxyPath) {
+      mediaRegistry.register(status.proxyPath)
+    }
+    return status
   })
 
   ipcMain.handle(IpcChannel.ensurePreviewProxies, async (_event, paths: unknown) => {

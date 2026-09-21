@@ -90,7 +90,8 @@ export function PovCard({
 
     async function resolveSrc(): Promise<void> {
       try {
-        // Grid / rail: prefer low-res preview proxy when ready; keep original while encoding.
+        // Grid / rail: use a cached preview proxy if one already exists.
+        // Never auto-encode here — full-length proxies for 2h+ OBS files take forever.
         if (variant !== 'focus-main') {
           const cached = await window.povApi.getPreviewProxyStatus(pov.filePath)
           if (cached?.status === 'ready' && cached.proxyPath) {
@@ -101,16 +102,9 @@ export function PovCard({
         }
         const original = await window.povApi.toMediaUrl(pov.filePath)
         if (!cancelled) setMediaUrl(original)
-        if (variant !== 'focus-main') {
-          void window.povApi.ensurePreviewProxy(pov.filePath).then(async (status) => {
-            if (cancelled || status.status !== 'ready' || !status.proxyPath) return
-            const proxyUrl = await window.povApi.toMediaUrl(status.proxyPath)
-            if (!cancelled) setMediaUrl(proxyUrl)
-          })
-        }
       } catch {
         if (!cancelled) {
-          // Original path failed — try preview proxy (also covers Focus fallback for bad containers).
+          // Unplayable original: only then kick a proxy encode as a compatibility fallback.
           try {
             const status = await window.povApi.ensurePreviewProxy(pov.filePath)
             if (cancelled) return
@@ -136,20 +130,15 @@ export function PovCard({
     }
   }, [pov.filePath, pov.missing, variant, proxyEpoch])
 
-  // Idle grid / rail: cheap JPEG poster so cards are not black without a decoder.
+  // Idle grid / rail: one cheap JPEG poster per file (fixed t≈1s). Do not refresh on scrub.
   useEffect(() => {
     if (pov.missing) {
       setPosterUrl(null)
       return
     }
     let cancelled = false
-    const atRaw = expectedVideoTime(masterTime, pov.offset)
-    const at =
-      pov.duration > 0
-        ? Math.min(Math.max(0.5, atRaw), Math.max(0.5, pov.duration - 0.05))
-        : Math.max(0.5, atRaw > 0 ? atRaw : 1)
     void window.povApi
-      .ensurePoster(pov.filePath, at)
+      .ensurePoster(pov.filePath, 1)
       .then((poster) => {
         if (cancelled) return
         const next = poster.dataUrl || poster.url
@@ -161,8 +150,7 @@ export function PovCard({
     return () => {
       cancelled = true
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- refresh on seek, not every clock tick
-  }, [pov.filePath, pov.missing, pov.duration, pov.offset, seekGeneration])
+  }, [pov.filePath, pov.missing])
 
   useEffect(() => {
     if (variant !== 'focus-main') return
