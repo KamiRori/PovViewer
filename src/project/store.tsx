@@ -17,6 +17,7 @@ interface ProjectApi {
   remove: (id: string) => void
   setColumns: (columns: ColumnCount) => void
   setDuration: (id: string, duration: number) => void
+  setDurationsByPath: (entries: Array<{ filePath: string; duration: number }>) => void
   setOffset: (id: string, offset: number) => void
   applySyncResults: (results: SyncResult[]) => void
   clearSyncReport: () => void
@@ -41,6 +42,11 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     (id: string, duration: number) => dispatch({ type: 'metadata', id, duration }),
     []
   )
+  const setDurationsByPath = useCallback(
+    (entries: Array<{ filePath: string; duration: number }>) =>
+      dispatch({ type: 'metadataByPath', entries }),
+    []
+  )
   const setOffset = useCallback(
     (id: string, offset: number) => dispatch({ type: 'setOffset', id, offset }),
     []
@@ -59,6 +65,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       remove,
       setColumns,
       setDuration,
+      setDurationsByPath,
       setOffset,
       applySyncResults,
       clearSyncReport
@@ -70,6 +77,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       remove,
       setColumns,
       setDuration,
+      setDurationsByPath,
       setOffset,
       applySyncResults,
       clearSyncReport

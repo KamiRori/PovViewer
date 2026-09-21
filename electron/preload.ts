@@ -18,6 +18,10 @@ const povApi = {
   readTextFile: (filePath: string): Promise<string> =>
     ipcRenderer.invoke(IpcChannel.readTextFile, filePath),
   toMediaUrl: (filePath: string): Promise<string> => ipcRenderer.invoke(IpcChannel.toMediaUrl, filePath),
+  probeMediaDurations: (
+    paths: string[]
+  ): Promise<Array<{ filePath: string; duration: number | null; error?: string }>> =>
+    ipcRenderer.invoke(IpcChannel.probeMediaDurations, paths),
   /**
    * Must receive the original File from the drop event, one at a time.
    * Passing File[] across the bridge can strip Electron's path metadata.

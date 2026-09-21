@@ -16,6 +16,7 @@ export function App() {
     remove,
     setColumns,
     setDuration,
+    setDurationsByPath,
     setOffset,
     applySyncResults,
     clearSyncReport
@@ -55,12 +56,35 @@ export function App() {
     }
   }, [])
 
+  async function applyFastDurations(paths: string[]): Promise<void> {
+    if (paths.length === 0) return
+    setHint(`正在快速读取时长（${paths.length}）…`)
+    try {
+      const results = await window.povApi.probeMediaDurations(paths)
+      const ready = results
+        .filter((entry) => entry.duration !== null && Number.isFinite(entry.duration))
+        .map((entry) => ({ filePath: entry.filePath, duration: entry.duration as number }))
+      if (ready.length > 0) setDurationsByPath(ready)
+      const missed = paths.length - ready.length
+      setHint(
+        missed > 0
+          ? `已读取 ${ready.length} 个时长，${missed} 个将回退浏览器探测`
+          : `已读取 ${ready.length} 个时长`
+      )
+    } catch (error) {
+      console.error('[media] probe durations failed', error)
+      setHint('快速读取时长失败，将回退浏览器探测')
+    }
+  }
+
   async function onImportPov(): Promise<void> {
     setBusy(true)
     setHint(null)
     try {
       const paths = await window.povApi.selectVideoFiles()
-      if (paths.length > 0) importFiles(paths)
+      if (paths.length === 0) return
+      importFiles(paths)
+      await applyFastDurations(paths)
     } finally {
       setBusy(false)
     }
@@ -100,6 +124,7 @@ export function App() {
       const paths = await pathsFromDroppedFiles(fileList)
       if (paths.length > 0) {
         importFiles(paths)
+        await applyFastDurations(paths)
       } else {
         setHint('未能导入拖入的文件。请使用 .mp4 / .mkv / .mov / .webm，或改用 Import POV。')
       }

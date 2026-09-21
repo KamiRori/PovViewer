@@ -7,6 +7,7 @@ export default defineConfig({
     build: {
       rollupOptions: {
         input: resolve('electron/main.ts'),
+        external: ['ffmpeg-static'],
         output: {
           entryFileNames: 'index.js'
         }

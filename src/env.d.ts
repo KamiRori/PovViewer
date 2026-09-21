@@ -28,11 +28,18 @@ export interface DebugSnapshot {
   feature: FeaturePerfReport | null
 }
 
+export interface MediaDurationDto {
+  filePath: string
+  duration: number | null
+  error?: string
+}
+
 export interface PovApi {
   selectVideoFiles: () => Promise<string[]>
   selectJsonFile: (title: string) => Promise<string | null>
   readTextFile: (filePath: string) => Promise<string>
   toMediaUrl: (filePath: string) => Promise<string>
+  probeMediaDurations: (paths: string[]) => Promise<MediaDurationDto[]>
   getPathForFile: (file: File) => string
   registerPaths: (paths: string[]) => Promise<string[]>
   openGpuDebug: () => Promise<boolean>

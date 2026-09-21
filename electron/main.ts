@@ -4,6 +4,7 @@ import { extname, join } from 'node:path'
 import { IpcChannel } from './channels'
 import { collectDebugSnapshot, setLatestFeatureReport } from './debugMetrics'
 import { DEBUG_METRICS_PUSH, type FeaturePerfReport } from './debugTypes'
+import { probeFileDurations } from './mediaDuration'
 import { MediaRegistry } from './mediaRegistry'
 import { registerMediaProtocol } from './mediaProtocol'
 
@@ -201,6 +202,12 @@ function registerIpc(): void {
       throw new Error('path is not registered')
     }
     return url
+  })
+
+  ipcMain.handle(IpcChannel.probeMediaDurations, async (_event, paths: unknown) => {
+    if (!Array.isArray(paths)) return []
+    const list = paths.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
+    return probeFileDurations(list, 4)
   })
 
   ipcMain.handle(IpcChannel.openGpuDebug, () => {
