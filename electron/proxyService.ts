@@ -1,9 +1,10 @@
 import { createHash } from 'node:crypto'
-import { spawn } from 'node:child_process'
 import { access, mkdir, stat } from 'node:fs/promises'
+import { cpus } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
-import ffmpegPath from 'ffmpeg-static'
+import { getFfmpegBinary } from './ffmpegBin'
+import { encodePreviewProxyFast, resolveJobParallelism } from './proxyEncode'
 
 export type ProxyKind = 'preview'
 
@@ -17,7 +18,7 @@ export interface ProxyStatus {
   error?: string
 }
 
-const PREVIEW_LABEL = 'preview-320x180-15fps-v1'
+const PREVIEW_LABEL = 'preview-320x180-15fps-v2'
 
 interface QueueItem {
   sourcePath: string
@@ -26,14 +27,37 @@ interface QueueItem {
   reject: (error: Error) => void
 }
 
+/**
+ * Parallel ffmpeg file-jobs for intentional 「生成预览代理」.
+ * Default: about half the logical CPUs as file-jobs so each long POV can
+ * still slice across the remaining cores. Override with POV_PROXY_CONCURRENCY.
+ */
+export function resolveProxyConcurrency(
+  cpuCount = cpus().length,
+  envValue = process.env.POV_PROXY_CONCURRENCY
+): number {
+  const parsed = envValue != null && envValue.trim() !== '' ? Number.parseInt(envValue, 10) : NaN
+  if (Number.isFinite(parsed) && parsed >= 1) return Math.min(64, parsed)
+  const n = Number.isFinite(cpuCount) && cpuCount > 0 ? Math.floor(cpuCount) : 4
+  // Leave headroom for per-file segment parallelism on multi-hour OBS takes.
+  return Math.max(2, Math.min(64, Math.ceil(n / 2)))
+}
+
 export class ProxyService {
   private readonly statuses = new Map<string, ProxyStatus>()
   private readonly queue: QueueItem[] = []
   /** Extra resolvers waiting on an in-flight encode for the same key. */
   private readonly waiters = new Map<string, Array<(status: ProxyStatus) => void>>()
   private running = 0
-  private readonly concurrency = 1
+  private readonly concurrency: number
+  private readonly cpuCount: number
   private dirReady: Promise<string> | null = null
+
+  constructor(concurrency = resolveProxyConcurrency(), cpuCount = cpus().length) {
+    this.concurrency = concurrency
+    this.cpuCount = cpuCount > 0 ? cpuCount : 4
+    console.log(`[proxy] encode concurrency = ${this.concurrency} (cpus=${this.cpuCount})`)
+  }
 
   private cacheKey(sourcePath: string, kind: ProxyKind, size: number, mtimeMs: number): string {
     const hash = createHash('sha1')
@@ -56,14 +80,57 @@ export class ProxyService {
       this.dirReady = (async () => {
         const dir = join(app.getPath('userData'), 'proxies')
         await mkdir(dir, { recursive: true })
+        console.log(`[proxy] proxies dir → ${dir}`)
         return dir
       })()
     }
     return this.dirReady
   }
 
+  async getProxiesDir(): Promise<string> {
+    return this.proxiesDir()
+  }
+
   getStatus(sourcePath: string, kind: ProxyKind = 'preview'): ProxyStatus | null {
     return this.statuses.get(this.statusKey(sourcePath, kind)) ?? null
+  }
+
+  /**
+   * Return a ready proxy if one already exists on disk / in memory.
+   * Never starts encoding — critical for multi‑hour OBS files.
+   */
+  async lookupPreview(sourcePath: string): Promise<ProxyStatus | null> {
+    const kind: ProxyKind = 'preview'
+    const key = this.statusKey(sourcePath, kind)
+    const existing = this.statuses.get(key)
+    if (existing?.status === 'ready' && existing.proxyPath) {
+      try {
+        await access(existing.proxyPath)
+        return existing
+      } catch {
+        // fall through
+      }
+    }
+    if (existing?.status === 'pending') return existing
+
+    let info: { size: number; mtimeMs: number }
+    try {
+      const s = await stat(sourcePath)
+      info = { size: s.size, mtimeMs: s.mtimeMs }
+    } catch {
+      return null
+    }
+
+    const dir = await this.proxiesDir()
+    const proxyPath = join(dir, `${this.cacheKey(sourcePath, kind, info.size, info.mtimeMs)}.mp4`)
+    try {
+      await access(proxyPath)
+      const ready: ProxyStatus = { kind, status: 'ready', sourcePath, proxyPath }
+      this.statuses.set(key, ready)
+      return ready
+    } catch {
+      return null
+    }
   }
 
   async ensurePreview(sourcePath: string): Promise<ProxyStatus> {
@@ -155,9 +222,7 @@ export class ProxyService {
   private async runJob(item: QueueItem): Promise<void> {
     const key = this.statusKey(item.sourcePath, item.kind)
     try {
-      if (!ffmpegPath) {
-        throw new Error('未找到内置 FFmpeg')
-      }
+      const bin = await getFfmpegBinary()
       const s = await stat(item.sourcePath)
       const dir = await this.proxiesDir()
       const proxyPath = join(
@@ -165,7 +230,13 @@ export class ProxyService {
         `${this.cacheKey(item.sourcePath, item.kind, s.size, s.mtimeMs)}.mp4`
       )
 
-      await encodePreviewProxy(ffmpegPath, item.sourcePath, proxyPath)
+      const parallel = resolveJobParallelism(this.cpuCount, this.running, this.queue.length)
+      const started = Date.now()
+      const stats = await encodePreviewProxyFast(bin, item.sourcePath, proxyPath, parallel)
+      console.log(
+        `[proxy] ready ${item.sourcePath} in ${((Date.now() - started) / 1000).toFixed(1)}s ` +
+          `(segments=${stats.segments}, threads=${stats.threads}, duration=${stats.duration ?? '?'})`
+      )
 
       const ready: ProxyStatus = {
         kind: item.kind,
@@ -178,6 +249,7 @@ export class ProxyService {
       this.settleWaiters(key, ready)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      console.error(`[proxy] failed ${item.sourcePath}`, message)
       const failed: ProxyStatus = {
         kind: item.kind,
         status: 'error',
@@ -190,41 +262,6 @@ export class ProxyService {
       this.settleWaiters(key, failed)
     }
   }
-}
-
-function encodePreviewProxy(bin: string, input: string, output: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const args = [
-      '-y',
-      '-i',
-      input,
-      '-vf',
-      'scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2',
-      '-r',
-      '15',
-      '-an',
-      '-c:v',
-      'libx264',
-      '-preset',
-      'veryfast',
-      '-crf',
-      '28',
-      '-movflags',
-      '+faststart',
-      output
-    ]
-    const child = spawn(bin, args, { windowsHide: true })
-    let stderr = ''
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
-      if (stderr.length > 4000) stderr = stderr.slice(-4000)
-    })
-    child.on('error', (error) => reject(error))
-    child.on('close', (code) => {
-      if (code === 0) resolve()
-      else reject(new Error(`FFmpeg 退出码 ${code}: ${stderr.trim() || '无输出'}`))
-    })
-  })
 }
 
 /** Pure helper for tests. */

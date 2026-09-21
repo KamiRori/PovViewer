@@ -120,6 +120,13 @@ function contentTypeFor(filePath: string): string {
       return 'video/quicktime'
     case '.mkv':
       return 'video/x-matroska'
+    case '.jpg':
+    case '.jpeg':
+      return 'image/jpeg'
+    case '.png':
+      return 'image/png'
+    case '.webp':
+      return 'image/webp'
     default:
       return 'application/octet-stream'
   }

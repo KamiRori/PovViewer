@@ -1,7 +1,8 @@
-import type { ColumnCount, POVRuntime } from './types'
+import type { ColumnCount, PlaybackSource, POVRuntime } from './types'
 import { importPovPaths } from './importPov'
 import { applySync } from '../sync/applySync'
 import type { SyncResult } from '../sync/types'
+import { pathIdentity } from '../utils/playerName'
 
 export interface ProjectState {
   povs: POVRuntime[]
@@ -23,7 +24,9 @@ export type ProjectAction =
   | { type: 'remove'; id: string }
   | { type: 'setColumns'; columns: ColumnCount }
   | { type: 'metadata'; id: string; duration: number }
+  | { type: 'metadataByPath'; entries: Array<{ filePath: string; duration: number }> }
   | { type: 'setOffset'; id: string; offset: number }
+  | { type: 'setPlaybackSource'; id: string; playbackSource: PlaybackSource }
   | { type: 'setMuted'; id: string; muted: boolean }
   | { type: 'soloAudio'; id: string }
   | { type: 'applySync'; results: SyncResult[] }
@@ -54,16 +57,35 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
       }
     case 'setColumns':
       return { ...state, columns: action.columns }
-    case 'metadata':
+    case 'metadata': {
       if (!Number.isFinite(action.duration) || action.duration < 0) return state
-      return {
-        ...state,
-        povs: state.povs.map((pov) =>
-          pov.id === action.id
-            ? { ...pov, duration: action.duration, metadataReady: true }
-            : pov
-        )
+      let changed = false
+      const povs = state.povs.map((pov) => {
+        if (pov.id !== action.id) return pov
+        if (pov.metadataReady && pov.duration === action.duration) return pov
+        changed = true
+        return { ...pov, duration: action.duration, metadataReady: true }
+      })
+      return changed ? { ...state, povs } : state
+    }
+    case 'metadataByPath': {
+      if (action.entries.length === 0) return state
+      const byPath = new Map<string, number>()
+      for (const entry of action.entries) {
+        if (!Number.isFinite(entry.duration) || entry.duration < 0) continue
+        byPath.set(pathIdentity(entry.filePath), entry.duration)
       }
+      if (byPath.size === 0) return state
+      let changed = false
+      const povs = state.povs.map((pov) => {
+        const duration = byPath.get(pathIdentity(pov.filePath))
+        if (duration === undefined) return pov
+        if (pov.metadataReady && pov.duration === duration) return pov
+        changed = true
+        return { ...pov, duration, metadataReady: true }
+      })
+      return changed ? { ...state, povs } : state
+    }
     case 'setOffset': {
       if (!Number.isFinite(action.offset)) return state
       return {
@@ -73,6 +95,13 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
         )
       }
     }
+    case 'setPlaybackSource':
+      return {
+        ...state,
+        povs: state.povs.map((pov) =>
+          pov.id === action.id ? { ...pov, playbackSource: action.playbackSource } : pov
+        )
+      }
     case 'setMuted':
       return {
         ...state,

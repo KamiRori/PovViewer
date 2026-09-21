@@ -41,6 +41,8 @@ interface VideoSurfaceProps {
   muted: boolean
   /** Layout role — focus-main stays high priority; focus-rail follows with continuous preview. */
   variant?: 'grid' | 'focus-main' | 'focus-rail'
+  /** Low-res JPEG/data-URL for idle grid cards (avoids black frames). */
+  posterUrl?: string | null
   onDuration: (duration: number) => void
   onError: () => void
 }
@@ -57,6 +59,7 @@ function VideoSurfaceImpl({
   armed,
   muted,
   variant = 'grid',
+  posterUrl = null,
   onDuration,
   onError
 }: VideoSurfaceProps) {
@@ -442,7 +445,11 @@ function VideoSurfaceImpl({
     <div ref={hostRef} className="video-host">
       <video
         ref={videoRef}
-        className={attachMedia ? 'video-surface' : 'video-surface video-surface-detached'}
+        className={
+          attachMedia && mediaReady
+            ? 'video-surface'
+            : 'video-surface video-surface-detached'
+        }
         muted={muted}
         playsInline
         preload="none"
@@ -460,13 +467,21 @@ function VideoSurfaceImpl({
         }}
         onError={() => onErrorRef.current()}
       />
+      {posterUrl && (!attachMedia || !mediaReady) ? (
+        <img className="video-still video-poster" src={posterUrl} alt="" draggable={false} />
+      ) : null}
       <canvas
         ref={stillRef}
-        className={`video-still${attachMedia ? ' video-still-hidden' : ''}${hasStill ? '' : ' is-empty'}`}
-        aria-hidden={attachMedia}
+        className={`video-still${
+          attachMedia || posterUrl || !hasStill ? ' video-still-hidden' : ''
+        }${hasStill ? '' : ' is-empty'}`}
+        aria-hidden={attachMedia || Boolean(posterUrl)}
       />
       {!attachMedia && armed && playing ? <p className="decode-badge">排队解码</p> : null}
-      {!attachMedia && !armed ? <p className="decode-badge">已卸载解码器</p> : null}
+      {!attachMedia && !armed ? (
+        <p className="decode-badge">{posterUrl ? '预览帧' : '等待预览…'}</p>
+      ) : null}
+      {attachMedia && !mediaReady ? <p className="decode-badge">加载画面…</p> : null}
       {sampled && attachMedia && playing ? (
         <p className="decode-badge decode-badge-quality">{sampleFps}fps 采样</p>
       ) : null}
@@ -620,6 +635,7 @@ export const VideoSurface = memo(VideoSurfaceImpl, (prev, next) => {
     prev.seekGeneration === next.seekGeneration &&
     prev.armed === next.armed &&
     prev.muted === next.muted &&
-    prev.variant === next.variant
+    prev.variant === next.variant &&
+    prev.posterUrl === next.posterUrl
   )
 })

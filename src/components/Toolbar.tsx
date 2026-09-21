@@ -56,7 +56,7 @@ export function Toolbar({
         type="button"
         onClick={onGenerateProxies}
         disabled={busy || proxyBusy || count === 0}
-        title="用内置 FFmpeg 生成约 320×180 / 15fps 网格预览代理（写入应用缓存，不改源文件）"
+        title="后台生成约 320×180 / 15fps 预览代理。多小时长视频必须点这个，网格播放才会流畅（不改源文件）"
       >
         {proxyBusy ? '生成代理中…' : '生成预览代理'}
       </button>

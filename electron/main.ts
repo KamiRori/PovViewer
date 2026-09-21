@@ -5,9 +5,16 @@ import { basename, extname, join } from 'node:path'
 import { IpcChannel } from './channels'
 import { collectDebugSnapshot, setLatestFeatureReport } from './debugMetrics'
 import { DEBUG_METRICS_PUSH, type FeaturePerfReport } from './debugTypes'
+import { probeFileDurations } from './mediaDuration'
 import { MediaRegistry } from './mediaRegistry'
 import { registerMediaProtocol } from './mediaProtocol'
+import { PosterService } from './posterService'
+import { applyProjectUserData } from './projectUserData'
 import { ProxyService } from './proxyService'
+
+// Before ready: keep proxies/posters under the repo, not %APPDATA%.
+applyProjectUserData()
+
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.webm'])
 
@@ -29,6 +36,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 const mediaRegistry = new MediaRegistry()
+const posterService = new PosterService()
 const proxyService = new ProxyService()
 let mainWindow: BrowserWindow | null = null
 let debugWindow: BrowserWindow | null = null
@@ -253,6 +261,32 @@ function registerIpc(): void {
     return url
   })
 
+  ipcMain.handle(IpcChannel.probeMediaDurations, async (_event, paths: unknown) => {
+    if (!Array.isArray(paths)) return []
+    const list = paths.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
+    // Caller often probes one path at a time for progressive UI; keep concurrency low when batched.
+    return probeFileDurations(list, Math.min(4, Math.max(1, list.length)))
+  })
+
+  ipcMain.handle(IpcChannel.ensurePoster, async (_event, filePath: unknown, atSeconds: unknown) => {
+    if (typeof filePath !== 'string' || filePath.trim() === '') {
+      throw new Error('invalid path')
+    }
+    const at = typeof atSeconds === 'number' && Number.isFinite(atSeconds) ? atSeconds : 1
+    const status = await posterService.ensurePoster(filePath, at)
+    if (status.status === 'ready' && status.posterPath) {
+      mediaRegistry.register(status.posterPath)
+    }
+    return {
+      filePath: status.filePath,
+      posterPath: status.posterPath,
+      status: status.status,
+      dataUrl: status.dataUrl,
+      url: status.posterPath ? mediaRegistry.urlFor(status.posterPath) : null,
+      error: status.error
+    }
+  })
+
   ipcMain.handle(IpcChannel.openGpuDebug, () => {
     openGpuDebugWindow()
     return true
@@ -276,24 +310,46 @@ function registerIpc(): void {
     return status
   })
 
-  ipcMain.handle(IpcChannel.getPreviewProxyStatus, (_event, filePath: unknown) => {
+  ipcMain.handle(IpcChannel.getPreviewProxyStatus, async (_event, filePath: unknown) => {
     if (typeof filePath !== 'string' || filePath.trim() === '') return null
-    return proxyService.getStatus(filePath, 'preview')
+    const status = await proxyService.lookupPreview(filePath)
+    if (status?.status === 'ready' && status.proxyPath) {
+      mediaRegistry.register(status.proxyPath)
+    }
+    return status
   })
 
   ipcMain.handle(IpcChannel.ensurePreviewProxies, async (_event, paths: unknown) => {
     if (!Array.isArray(paths)) return []
-    const jobs = paths
-      .filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
-      .map(async (entry) => {
-        const status = await proxyService.ensurePreview(entry)
-        if (status.status === 'ready' && status.proxyPath) {
-          mediaRegistry.register(status.proxyPath)
+    const list = paths.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
+    const total = list.length
+    let completed = 0
+    const cacheDir = await proxyService.getProxiesDir()
+    const jobs = list.map(async (entry) => {
+      const status = await proxyService.ensurePreview(entry)
+      if (status.status === 'ready' && status.proxyPath) {
+        mediaRegistry.register(status.proxyPath)
+      }
+      completed += 1
+      const payload = {
+        completed,
+        total,
+        sourcePath: entry,
+        status: status.status,
+        cacheDir,
+        error: status.error
+      }
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) {
+          window.webContents.send(IpcChannel.proxyProgress, payload)
         }
-        return status
-      })
+      }
+      return status
+    })
     return Promise.all(jobs)
   })
+
+  ipcMain.handle(IpcChannel.getProxyCacheDir, async () => proxyService.getProxiesDir())
 }
 
 app.whenReady().then(() => {

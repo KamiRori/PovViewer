@@ -9,7 +9,7 @@ import { shouldMutePov } from '../player/audioPolicy'
 import { usePlaybackArm } from '../player/playbackArm'
 import { VideoSurface } from '../player/VideoSurface'
 import { useViewUi } from '../player/viewUi'
-import type { POVRuntime } from '../project/types'
+import type { PlaybackSource, POVRuntime } from '../project/types'
 import {
   expectedVideoTime,
   povPlaybackStatus,
@@ -30,10 +30,23 @@ interface PovCardProps {
   variant?: 'grid' | 'focus-main' | 'focus-rail'
   onRename: (id: string, playerName: string) => void
   onOffset: (id: string, offset: number) => void
+  onPlaybackSource: (id: string, playbackSource: PlaybackSource) => void
   onRemove: (id: string) => void
   onDuration: (id: string, duration: number) => void
   onSoloAudio: (id: string) => void
   onLocate: (id: string) => void
+}
+
+async function resolveOriginalUrl(filePath: string): Promise<string> {
+  return window.povApi.toMediaUrl(filePath)
+}
+
+async function resolveProxyUrl(filePath: string): Promise<string | null> {
+  const cached = await window.povApi.getPreviewProxyStatus(filePath)
+  if (cached?.status === 'ready' && cached.proxyPath) {
+    return window.povApi.toMediaUrl(cached.proxyPath)
+  }
+  return null
 }
 
 export function PovCard({
@@ -46,6 +59,7 @@ export function PovCard({
   variant = 'grid',
   onRename,
   onOffset,
+  onPlaybackSource,
   onRemove,
   onDuration,
   onSoloAudio,
@@ -56,7 +70,10 @@ export function PovCard({
   const hostRef = useRef<HTMLElement>(null)
   const clickTimerRef = useRef(0)
   const [mediaUrl, setMediaUrl] = useState<string | null>(null)
+  const mediaUrlRef = useRef<string | null>(null)
+  const [posterUrl, setPosterUrl] = useState<string | null>(null)
   const [unplayable, setUnplayable] = useState(false)
+  const [proxyMissing, setProxyMissing] = useState(false)
   const [draft, setDraft] = useState(pov.playerName)
   const [offsetDraft, setOffsetDraft] = useState(String(pov.offset))
   const fileName = fileNameFromPath(pov.filePath)
@@ -79,53 +96,66 @@ export function PovCard({
   }, [pov.offset])
 
   useEffect(() => {
+    mediaUrlRef.current = mediaUrl
+  }, [mediaUrl])
+
+  useEffect(() => {
     if (pov.missing) {
       setMediaUrl(null)
+      setProxyMissing(false)
       return
     }
     let cancelled = false
     setUnplayable(false)
+    setProxyMissing(false)
     setMediaUrl(null)
 
     async function resolveSrc(): Promise<void> {
       try {
-        // Grid / rail: prefer low-res preview proxy when ready; keep original while encoding.
-        if (variant !== 'focus-main') {
-          const cached = await window.povApi.getPreviewProxyStatus(pov.filePath)
-          if (cached?.status === 'ready' && cached.proxyPath) {
-            const proxyUrl = await window.povApi.toMediaUrl(cached.proxyPath)
-            if (!cancelled) setMediaUrl(proxyUrl)
+        if (pov.playbackSource === 'proxy') {
+          const proxyUrl = await resolveProxyUrl(pov.filePath)
+          if (cancelled) return
+          if (proxyUrl) {
+            setUnplayable(false)
+            setProxyMissing(false)
+            setMediaUrl(proxyUrl)
             return
           }
+          setProxyMissing(true)
+          setMediaUrl(null)
+          return
         }
-        const original = await window.povApi.toMediaUrl(pov.filePath)
-        if (!cancelled) setMediaUrl(original)
-        if (variant !== 'focus-main') {
-          void window.povApi.ensurePreviewProxy(pov.filePath).then(async (status) => {
-            if (cancelled || status.status !== 'ready' || !status.proxyPath) return
-            const proxyUrl = await window.povApi.toMediaUrl(status.proxyPath)
-            if (!cancelled) setMediaUrl(proxyUrl)
-          })
+
+        const original = await resolveOriginalUrl(pov.filePath)
+        if (!cancelled) {
+          setProxyMissing(false)
+          setMediaUrl(original)
         }
       } catch {
-        if (!cancelled) {
-          // Original path failed — try preview proxy (also covers Focus fallback for bad containers).
-          try {
-            const status = await window.povApi.ensurePreviewProxy(pov.filePath)
+        if (cancelled) return
+        // Preferred source failed: try the other one once.
+        try {
+          if (pov.playbackSource === 'original') {
+            const proxyUrl = await resolveProxyUrl(pov.filePath)
             if (cancelled) return
-            if (status.status === 'ready' && status.proxyPath) {
-              const proxyUrl = await window.povApi.toMediaUrl(status.proxyPath)
-              if (!cancelled) {
-                setUnplayable(false)
-                setMediaUrl(proxyUrl)
-                return
-              }
+            if (proxyUrl) {
+              setUnplayable(false)
+              setProxyMissing(false)
+              setMediaUrl(proxyUrl)
+              return
             }
-          } catch {
-            // ignore — show unplayable
+          } else {
+            const original = await resolveOriginalUrl(pov.filePath)
+            if (!cancelled) {
+              setProxyMissing(false)
+              setMediaUrl(original)
+              return
+            }
           }
-          if (!cancelled) setUnplayable(true)
+        } catch {
+          // fall through
         }
+        if (!cancelled) setUnplayable(true)
       }
     }
 
@@ -133,7 +163,29 @@ export function PovCard({
     return () => {
       cancelled = true
     }
-  }, [pov.filePath, pov.missing, variant, proxyEpoch])
+  }, [pov.filePath, pov.missing, pov.playbackSource, proxyEpoch])
+
+  // Idle grid / rail: one cheap JPEG poster per file (fixed t≈1s). Do not refresh on scrub.
+  useEffect(() => {
+    if (pov.missing) {
+      setPosterUrl(null)
+      return
+    }
+    let cancelled = false
+    void window.povApi
+      .ensurePoster(pov.filePath, 1)
+      .then((poster) => {
+        if (cancelled) return
+        const next = poster.dataUrl || poster.url
+        if (poster.status === 'ready' && next) setPosterUrl(next)
+      })
+      .catch((error) => {
+        console.warn('[poster] ensure failed', pov.filePath, error)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [pov.filePath, pov.missing])
 
   useEffect(() => {
     if (variant !== 'focus-main') return
@@ -146,6 +198,7 @@ export function PovCard({
 
   let statusLabel = '—'
   if (pov.missing) statusLabel = 'Missing File'
+  else if (proxyMissing) statusLabel = '代理未生成'
   else if (unplayable) statusLabel = '无法播放'
   else if (status === 'pending') statusLabel = '读取中'
   else if (status === 'not_started') statusLabel = 'NOT STARTED'
@@ -264,8 +317,10 @@ export function PovCard({
               Locate File
             </button>
           </div>
+        ) : proxyMissing ? (
+          <p className="pov-placeholder">代理未生成</p>
         ) : unplayable ? (
-          <p className="pov-placeholder">无法直接播放</p>
+          <p className="pov-placeholder">无法播放</p>
         ) : mediaUrl ? (
           <>
             <VideoSurface
@@ -280,13 +335,18 @@ export function PovCard({
               armed={effectiveArmed}
               muted={muted}
               variant={variant}
+              posterUrl={posterUrl}
               onDuration={(nextDuration) => onDuration(pov.id, nextDuration)}
               onError={() => {
                 void (async () => {
                   try {
-                    const status = await window.povApi.ensurePreviewProxy(pov.filePath)
-                    if (status.status === 'ready' && status.proxyPath) {
-                      const proxyUrl = await window.povApi.toMediaUrl(status.proxyPath)
+                    if (pov.playbackSource === 'proxy') {
+                      // Already on proxy — do not loop.
+                      setUnplayable(true)
+                      return
+                    }
+                    const proxyUrl = await resolveProxyUrl(pov.filePath)
+                    if (proxyUrl && proxyUrl !== mediaUrlRef.current) {
                       setUnplayable(false)
                       setMediaUrl(proxyUrl)
                       return
@@ -332,21 +392,49 @@ export function PovCard({
         </span>
         <span className="pov-status">{statusLabel}</span>
       </div>
-      <label className="offset-row">
-        <span>offset</span>
-        <input
-          className="offset-input"
-          value={offsetDraft}
-          inputMode="decimal"
-          spellCheck={false}
-          onChange={(event) => setOffsetDraft(event.target.value)}
-          onBlur={commitOffset}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') event.currentTarget.blur()
-          }}
-        />
-        <span>s</span>
-      </label>
+      <div className="pov-controls">
+        <div className="source-toggle" role="group" aria-label="片源">
+          <button
+            type="button"
+            className={pov.playbackSource === 'proxy' ? 'is-active' : undefined}
+            aria-pressed={pov.playbackSource === 'proxy'}
+            title="代理预览"
+            onClick={(event) => {
+              event.stopPropagation()
+              onPlaybackSource(pov.id, 'proxy')
+            }}
+          >
+            代理
+          </button>
+          <button
+            type="button"
+            className={pov.playbackSource === 'original' ? 'is-active' : undefined}
+            aria-pressed={pov.playbackSource === 'original'}
+            title="原片"
+            onClick={(event) => {
+              event.stopPropagation()
+              onPlaybackSource(pov.id, 'original')
+            }}
+          >
+            原片
+          </button>
+        </div>
+        <label className="offset-row">
+          <span>offset</span>
+          <input
+            className="offset-input"
+            value={offsetDraft}
+            inputMode="decimal"
+            spellCheck={false}
+            onChange={(event) => setOffsetDraft(event.target.value)}
+            onBlur={commitOffset}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur()
+            }}
+          />
+          <span>s</span>
+        </label>
+      </div>
       <div className="pov-actions">
         <button
           type="button"

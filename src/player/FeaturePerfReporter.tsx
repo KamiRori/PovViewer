@@ -11,9 +11,9 @@ export function FeaturePerfReporter({ playing }: { playing: boolean }): null {
   const liveStats = useLiveDecodeStats()
 
   useEffect(() => {
-    const id = window.setInterval(() => {
+    const payload = () => {
       const rates = drainPerfRates()
-      window.povApi.reportFeaturePerf({
+      return {
         ts: Date.now(),
         playbackMode: settings.playbackMode,
         preset: settings.preset,
@@ -23,11 +23,22 @@ export function FeaturePerfReporter({ playing }: { playing: boolean }): null {
         sampleSeeksPerSec: rates.sampleSeeksPerSec,
         continuousPlayCallsPerSec: rates.continuousPlayCallsPerSec,
         hardSeeksPerSec: rates.hardSeeksPerSec,
-        note:
-          settings.playbackMode === 'sampled'
+        note: playing
+          ? settings.playbackMode === 'sampled'
             ? '采样 seek 通常比连续播放更吃 GPU；请改用高/中/低连续预设。'
             : `连续播放 · 解码 ${liveStats.live}/${liveStats.max} · 校正松紧 ${settings.hardSeekSlack.toFixed(1)}x · softSync=${settings.softSync ? 'on' : 'off'}`
-      })
+          : '空闲：已停止周期上报。'
+      }
+    }
+
+    // Idle: one snapshot then stop — a 500ms IPC loop alone keeps the process awake.
+    if (!playing) {
+      window.povApi.reportFeaturePerf(payload())
+      return
+    }
+
+    const id = window.setInterval(() => {
+      window.povApi.reportFeaturePerf(payload())
     }, 500)
     return () => window.clearInterval(id)
   }, [

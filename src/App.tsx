@@ -11,6 +11,7 @@ import { parseSyncJson } from './sync/parseSync'
 import { usePlayback } from './timeline/store'
 import { dataTransferHasFiles, pathsFromDroppedFiles } from './utils/dropFiles'
 import { fileNameFromPath } from './utils/playerName'
+import type { PlaybackSource } from './project/types'
 
 export function App() {
   const {
@@ -20,7 +21,9 @@ export function App() {
     remove,
     setColumns,
     setDuration,
+    setDurationsByPath,
     setOffset,
+    setPlaybackSource,
     soloAudio,
     applySyncResults,
     clearSyncReport,
@@ -40,6 +43,14 @@ export function App() {
   const [hint, setHint] = useState<string | null>(null)
   const dragDepthRef = useRef(0)
   const visible = state.povs.filter((pov) => pov.enabled)
+
+  useEffect(() => {
+    return window.povApi.onProxyProgress(({ completed, total, cacheDir, status, error }) => {
+      const where = cacheDir ? ` → ${cacheDir}` : ''
+      const detail = status === 'error' && error ? `（失败：${error.slice(0, 80)}）` : ''
+      setHint(`正在生成网格预览代理（${completed}/${total}）${where}${detail}`)
+    })
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -107,12 +118,39 @@ export function App() {
     }
   }, [state.povs, view.focusId, view.exitFocus])
 
+  async function applyFastDurations(paths: string[]): Promise<void> {
+    if (paths.length === 0) return
+    setHint(`正在读取时长（${paths.length}）…`)
+    try {
+      // Parallel moov/ffmpeg duration probes — do not wait on poster/proxy encodes.
+      const results = await window.povApi.probeMediaDurations(paths)
+      const ready = results
+        .filter((entry) => entry.duration !== null && Number.isFinite(entry.duration))
+        .map((entry) => ({ filePath: entry.filePath, duration: entry.duration as number }))
+      if (ready.length > 0) setDurationsByPath(ready)
+      for (const entry of ready) {
+        void window.povApi.ensurePoster(entry.filePath, 1)
+      }
+      const failed = paths.length - ready.length
+      setHint(
+        failed > 0
+          ? `时长就绪 ${ready.length}/${paths.length}（${failed} 失败）。长视频请点「生成预览代理」后再流畅网格播放。`
+          : `时长就绪 ${ready.length}/${paths.length}。长视频网格流畅播放请点「生成预览代理」。`
+      )
+    } catch (error) {
+      console.error('[media] probe durations failed', error)
+      setHint('读取时长失败')
+    }
+  }
+
   async function onImportPov(): Promise<void> {
     setBusy(true)
     setHint(null)
     try {
       const paths = await window.povApi.selectVideoFiles()
-      if (paths.length > 0) importFiles(paths)
+      if (paths.length === 0) return
+      importFiles(paths)
+      await applyFastDurations(paths)
     } finally {
       setBusy(false)
     }
@@ -207,21 +245,31 @@ export function App() {
     const paths = state.povs.filter((pov) => !pov.missing).map((pov) => pov.filePath)
     if (paths.length === 0) return
     setProxyBusy(true)
-    setHint(`正在生成网格预览代理（0/${paths.length}）…`)
+    let cacheDir = ''
+    try {
+      cacheDir = await window.povApi.getProxyCacheDir()
+    } catch {
+      cacheDir = ''
+    }
+    setHint(
+      cacheDir
+        ? `正在生成网格预览代理（0/${paths.length}）→ ${cacheDir}`
+        : `正在生成网格预览代理（0/${paths.length}）…`
+    )
     try {
       const results = await window.povApi.ensurePreviewProxies(paths)
       const ready = results.filter((entry) => entry.status === 'ready').length
       const failed = results.filter((entry) => entry.status === 'error' || entry.status === 'missing')
-        .length
+      const firstError = failed.find((entry) => entry.error)?.error
       setHint(
-        failed > 0
-          ? `预览代理：${ready} 就绪，${failed} 失败（写入应用缓存，未改源文件）`
-          : `预览代理已就绪：${ready} 个（网格将自动改用低分辨率预览）`
+        failed.length > 0
+          ? `预览代理：${ready} 就绪，${failed.length} 失败${firstError ? `（${firstError.slice(0, 120)}）` : ''}${cacheDir ? ` @ ${cacheDir}` : ''}`
+          : `预览代理已就绪：${ready} 个${cacheDir ? ` @ ${cacheDir}` : ''}`
       )
       setProxyEpoch((value) => value + 1)
     } catch (error) {
       console.error('[proxy] ensure failed', error)
-      setHint('生成预览代理失败')
+      setHint(`生成预览代理失败${error instanceof Error ? `：${error.message}` : ''}`)
     } finally {
       setProxyBusy(false)
     }
@@ -261,6 +309,7 @@ export function App() {
       const paths = await pathsFromDroppedFiles(fileList)
       if (paths.length > 0) {
         importFiles(paths)
+        await applyFastDurations(paths)
       } else {
         setHint('未能导入拖入的文件。请使用 .mp4 / .mkv / .mov / .webm，或改用 Import POV。')
       }
@@ -275,6 +324,10 @@ export function App() {
   function onOffsetChange(id: string, offset: number): void {
     setOffset(id, offset)
     resync()
+  }
+
+  function onPlaybackSourceChange(id: string, playbackSource: PlaybackSource): void {
+    setPlaybackSource(id, playbackSource)
   }
 
   function onRemove(id: string): void {
@@ -376,6 +429,7 @@ export function App() {
             proxyEpoch={proxyEpoch}
             onRename={rename}
             onOffset={onOffsetChange}
+            onPlaybackSource={onPlaybackSourceChange}
             onRemove={onRemove}
             onDuration={setDuration}
             onSoloAudio={soloAudio}

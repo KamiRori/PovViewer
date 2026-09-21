@@ -4,3 +4,5 @@ out
 .DS_Store
 *.log*
 .eslintcache
+minecraft-pov-viewer/
+

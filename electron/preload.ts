@@ -39,7 +39,51 @@ const povApi = {
     ipcRenderer.invoke(IpcChannel.getPreviewProxyStatus, filePath),
   ensurePreviewProxies: (paths: string[]): Promise<ProxyStatusDto[]> =>
     ipcRenderer.invoke(IpcChannel.ensurePreviewProxies, paths),
+  onProxyProgress: (
+    listener: (payload: {
+      completed: number
+      total: number
+      sourcePath: string
+      status: string
+      cacheDir?: string
+      error?: string
+    }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      payload: {
+        completed: number
+        total: number
+        sourcePath: string
+        status: string
+        cacheDir?: string
+        error?: string
+      }
+    ): void => {
+      listener(payload)
+    }
+    ipcRenderer.on(IpcChannel.proxyProgress, handler)
+    return () => {
+      ipcRenderer.removeListener(IpcChannel.proxyProgress, handler)
+    }
+  },
+  getProxyCacheDir: (): Promise<string> => ipcRenderer.invoke(IpcChannel.getProxyCacheDir),
   toMediaUrl: (filePath: string): Promise<string> => ipcRenderer.invoke(IpcChannel.toMediaUrl, filePath),
+  probeMediaDurations: (
+    paths: string[]
+  ): Promise<Array<{ filePath: string; duration: number | null; error?: string; method?: string }>> =>
+    ipcRenderer.invoke(IpcChannel.probeMediaDurations, paths),
+  ensurePoster: (
+    filePath: string,
+    atSeconds?: number
+  ): Promise<{
+    filePath: string
+    posterPath: string | null
+    status: string
+    url: string | null
+    dataUrl: string | null
+    error?: string
+  }> => ipcRenderer.invoke(IpcChannel.ensurePoster, filePath, atSeconds ?? 1),
   /**
    * Must receive the original File from the drop event, one at a time.
    * Passing File[] across the bridge can strip Electron's path metadata.

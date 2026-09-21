@@ -36,6 +36,22 @@ export interface DebugSnapshot {
   feature: FeaturePerfReport | null
 }
 
+export interface MediaDurationDto {
+  filePath: string
+  duration: number | null
+  error?: string
+  method?: 'mp4-moov' | 'ffmpeg' | 'none'
+}
+
+export interface PosterDto {
+  filePath: string
+  posterPath: string | null
+  status: string
+  url: string | null
+  dataUrl: string | null
+  error?: string
+}
+
 export interface PovApi {
   selectVideoFiles: () => Promise<string[]>
   selectJsonFile: (title: string) => Promise<string | null>
@@ -47,7 +63,20 @@ export interface PovApi {
   ensurePreviewProxy: (filePath: string) => Promise<ProxyStatusDto>
   getPreviewProxyStatus: (filePath: string) => Promise<ProxyStatusDto | null>
   ensurePreviewProxies: (paths: string[]) => Promise<ProxyStatusDto[]>
+  onProxyProgress: (
+    listener: (payload: {
+      completed: number
+      total: number
+      sourcePath: string
+      status: string
+      cacheDir?: string
+      error?: string
+    }) => void
+  ) => () => void
+  getProxyCacheDir: () => Promise<string>
   toMediaUrl: (filePath: string) => Promise<string>
+  probeMediaDurations: (paths: string[]) => Promise<MediaDurationDto[]>
+  ensurePoster: (filePath: string, atSeconds?: number) => Promise<PosterDto>
   getPathForFile: (file: File) => string
   registerPaths: (paths: string[]) => Promise<string[]>
   openGpuDebug: () => Promise<boolean>

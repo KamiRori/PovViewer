@@ -60,8 +60,9 @@ export function PlaybackArmProvider({ children }: { children: ReactNode }) {
     [setArmed]
   )
 
+  /** Cards start idle unless explicitly defaultArmed — avoids import-time decoder storm. */
   const ensure = useCallback(
-    (id: string, defaultArmed?: boolean) => {
+    (id: string, defaultArmed = false) => {
       const wasMounted = mountedRef.current.has(id)
       mountedRef.current.add(id)
       if (wasMounted) return
@@ -72,9 +73,7 @@ export function PlaybackArmProvider({ children }: { children: ReactNode }) {
         return
       }
 
-      // First appearance: arm only if nothing else is armed yet (unless overridden).
-      const shouldArm = defaultArmed ?? armedRef.current.size === 0
-      if (shouldArm) armedRef.current.add(id)
+      if (defaultArmed) armedRef.current.add(id)
       emit()
     },
     [emit]
@@ -93,11 +92,9 @@ export function PlaybackArmProvider({ children }: { children: ReactNode }) {
   )
 
   const clearAll = useCallback(() => {
-    const hadArmed = armedRef.current.size > 0
     armedRef.current.clear()
     mountedRef.current.clear()
-    if (hadArmed) emit()
-    else emit()
+    emit()
   }, [emit])
 
   const getArmedCount = useCallback(() => armedRef.current.size, [])

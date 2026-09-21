@@ -8,6 +8,7 @@ function pov(partial: Partial<POVRuntime> & Pick<POVRuntime, 'id' | 'offset' | '
     filePath: `${partial.id}.mp4`,
     enabled: true,
     muted: true,
+    playbackSource: 'proxy',
     missing: false,
     ...partial
   }

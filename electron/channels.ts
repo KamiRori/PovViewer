@@ -4,6 +4,8 @@ export const IpcChannel = {
   saveJsonFile: 'dialog:saveJsonFile',
   registerPaths: 'media:registerPaths',
   toMediaUrl: 'media:toUrl',
+  probeMediaDurations: 'media:probeDurations',
+  ensurePoster: 'media:ensurePoster',
   readTextFile: 'fs:readTextFile',
   writeTextFile: 'fs:writeTextFile',
   pathExists: 'fs:pathExists',
@@ -13,5 +15,7 @@ export const IpcChannel = {
   getDebugSnapshot: 'debug:getSnapshot',
   ensurePreviewProxy: 'proxy:ensurePreview',
   getPreviewProxyStatus: 'proxy:getStatus',
-  ensurePreviewProxies: 'proxy:ensureMany'
+  ensurePreviewProxies: 'proxy:ensureMany',
+  proxyProgress: 'proxy:progress',
+  getProxyCacheDir: 'proxy:getCacheDir'
 } as const
