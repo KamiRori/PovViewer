@@ -10,7 +10,6 @@ import { usePlaybackArm } from '../player/playbackArm'
 import { VideoSurface } from '../player/VideoSurface'
 import { useViewUi } from '../player/viewUi'
 import type { PlaybackSource, POVRuntime } from '../project/types'
-import { isPlaybackSource } from '../project/types'
 import {
   expectedVideoTime,
   povPlaybackStatus,
@@ -319,9 +318,9 @@ export function PovCard({
             </button>
           </div>
         ) : proxyMissing ? (
-          <p className="pov-placeholder">代理未生成，请先点「生成预览代理」或改选原片</p>
+          <p className="pov-placeholder">代理未生成</p>
         ) : unplayable ? (
-          <p className="pov-placeholder">无法直接播放</p>
+          <p className="pov-placeholder">无法播放</p>
         ) : mediaUrl ? (
           <>
             <VideoSurface
@@ -393,37 +392,49 @@ export function PovCard({
         </span>
         <span className="pov-status">{statusLabel}</span>
       </div>
-      <label className="source-row">
-        <span>片源</span>
-        <select
-          className="source-select"
-          value={pov.playbackSource}
-          aria-label="播放片源"
-          onChange={(event) => {
-            const next = event.target.value
-            if (isPlaybackSource(next)) onPlaybackSource(pov.id, next)
-          }}
-          onClick={(event) => event.stopPropagation()}
-        >
-          <option value="proxy">代理预览</option>
-          <option value="original">原片直通</option>
-        </select>
-      </label>
-      <label className="offset-row">
-        <span>offset</span>
-        <input
-          className="offset-input"
-          value={offsetDraft}
-          inputMode="decimal"
-          spellCheck={false}
-          onChange={(event) => setOffsetDraft(event.target.value)}
-          onBlur={commitOffset}
-          onKeyDown={(event) => {
-            if (event.key === 'Enter') event.currentTarget.blur()
-          }}
-        />
-        <span>s</span>
-      </label>
+      <div className="pov-controls">
+        <div className="source-toggle" role="group" aria-label="片源">
+          <button
+            type="button"
+            className={pov.playbackSource === 'proxy' ? 'is-active' : undefined}
+            aria-pressed={pov.playbackSource === 'proxy'}
+            title="代理预览"
+            onClick={(event) => {
+              event.stopPropagation()
+              onPlaybackSource(pov.id, 'proxy')
+            }}
+          >
+            代理
+          </button>
+          <button
+            type="button"
+            className={pov.playbackSource === 'original' ? 'is-active' : undefined}
+            aria-pressed={pov.playbackSource === 'original'}
+            title="原片"
+            onClick={(event) => {
+              event.stopPropagation()
+              onPlaybackSource(pov.id, 'original')
+            }}
+          >
+            原片
+          </button>
+        </div>
+        <label className="offset-row">
+          <span>offset</span>
+          <input
+            className="offset-input"
+            value={offsetDraft}
+            inputMode="decimal"
+            spellCheck={false}
+            onChange={(event) => setOffsetDraft(event.target.value)}
+            onBlur={commitOffset}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') event.currentTarget.blur()
+            }}
+          />
+          <span>s</span>
+        </label>
+      </div>
       <div className="pov-actions">
         <button
           type="button"
