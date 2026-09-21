@@ -22,6 +22,11 @@ const povApi = {
     paths: string[]
   ): Promise<Array<{ filePath: string; duration: number | null; error?: string; method?: string }>> =>
     ipcRenderer.invoke(IpcChannel.probeMediaDurations, paths),
+  ensurePoster: (
+    filePath: string,
+    atSeconds?: number
+  ): Promise<{ filePath: string; posterPath: string | null; status: string; url: string | null; error?: string }> =>
+    ipcRenderer.invoke(IpcChannel.ensurePoster, filePath, atSeconds ?? 1),
   /**
    * Must receive the original File from the drop event, one at a time.
    * Passing File[] across the bridge can strip Electron's path metadata.

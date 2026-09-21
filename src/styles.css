@@ -297,6 +297,11 @@ main {
   background: #07080c;
 }
 
+.video-poster {
+  position: absolute;
+  inset: 0;
+}
+
 .video-still.video-still-hidden {
   display: none;
 }

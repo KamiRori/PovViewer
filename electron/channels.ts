@@ -4,6 +4,7 @@ export const IpcChannel = {
   registerPaths: 'media:registerPaths',
   toMediaUrl: 'media:toUrl',
   probeMediaDurations: 'media:probeDurations',
+  ensurePoster: 'media:ensurePoster',
   readTextFile: 'fs:readTextFile',
   openGpuDebug: 'debug:openGpuWindow',
   reportFeaturePerf: 'debug:reportFeaturePerf',

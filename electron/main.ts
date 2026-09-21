@@ -7,6 +7,7 @@ import { DEBUG_METRICS_PUSH, type FeaturePerfReport } from './debugTypes'
 import { probeFileDurations } from './mediaDuration'
 import { MediaRegistry } from './mediaRegistry'
 import { registerMediaProtocol } from './mediaProtocol'
+import { PosterService } from './posterService'
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.webm'])
 
@@ -28,6 +29,7 @@ protocol.registerSchemesAsPrivileged([
 ])
 
 const mediaRegistry = new MediaRegistry()
+const posterService = new PosterService()
 let mainWindow: BrowserWindow | null = null
 let debugWindow: BrowserWindow | null = null
 let debugPushTimer: NodeJS.Timeout | null = null
@@ -209,6 +211,22 @@ function registerIpc(): void {
     const list = paths.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
     // Caller often probes one path at a time for progressive UI; keep concurrency low when batched.
     return probeFileDurations(list, Math.min(2, Math.max(1, list.length)))
+  })
+
+  ipcMain.handle(IpcChannel.ensurePoster, async (_event, filePath: unknown, atSeconds: unknown) => {
+    if (typeof filePath !== 'string' || filePath.trim() === '') {
+      throw new Error('invalid path')
+    }
+    const at = typeof atSeconds === 'number' && Number.isFinite(atSeconds) ? atSeconds : 1
+    const status = await posterService.ensurePoster(filePath, at)
+    if (status.status === 'ready' && status.posterPath) {
+      mediaRegistry.register(status.posterPath)
+      return {
+        ...status,
+        url: mediaRegistry.urlFor(status.posterPath)
+      }
+    }
+    return { ...status, url: null }
   })
 
   ipcMain.handle(IpcChannel.openGpuDebug, () => {

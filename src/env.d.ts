@@ -35,12 +35,21 @@ export interface MediaDurationDto {
   method?: 'mp4-moov' | 'ffmpeg' | 'none'
 }
 
+export interface PosterDto {
+  filePath: string
+  posterPath: string | null
+  status: string
+  url: string | null
+  error?: string
+}
+
 export interface PovApi {
   selectVideoFiles: () => Promise<string[]>
   selectJsonFile: (title: string) => Promise<string | null>
   readTextFile: (filePath: string) => Promise<string>
   toMediaUrl: (filePath: string) => Promise<string>
   probeMediaDurations: (paths: string[]) => Promise<MediaDurationDto[]>
+  ensurePoster: (filePath: string, atSeconds?: number) => Promise<PosterDto>
   getPathForFile: (file: File) => string
   registerPaths: (paths: string[]) => Promise<string[]>
   openGpuDebug: () => Promise<boolean>

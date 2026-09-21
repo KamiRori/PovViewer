@@ -36,6 +36,8 @@ interface VideoSurfaceProps {
   seekGeneration: number
   /** When false, release the decoder and show a still frame only. */
   armed: boolean
+  /** Low-res JPEG from main process for idle grid cards. */
+  posterUrl?: string | null
   onDuration: (duration: number) => void
   onError: () => void
 }
@@ -50,6 +52,7 @@ function VideoSurfaceImpl({
   playbackRate,
   seekGeneration,
   armed,
+  posterUrl = null,
   onDuration,
   onError
 }: VideoSurfaceProps) {
@@ -415,13 +418,18 @@ function VideoSurfaceImpl({
         }}
         onError={() => onErrorRef.current()}
       />
+      {!attachMedia && posterUrl && !hasStill ? (
+        <img className="video-still video-poster" src={posterUrl} alt="" draggable={false} />
+      ) : null}
       <canvas
         ref={stillRef}
-        className={`video-still${attachMedia ? ' video-still-hidden' : ''}${hasStill ? '' : ' is-empty'}`}
+        className={`video-still${attachMedia || (!hasStill && posterUrl) ? ' video-still-hidden' : ''}${hasStill ? '' : ' is-empty'}`}
         aria-hidden={attachMedia}
       />
       {!attachMedia ? (
-        <p className="decode-badge">{armed && !playing ? '暂停·静止帧' : '已卸载解码器'}</p>
+        <p className="decode-badge">
+          {armed && !playing ? '暂停·静止帧' : hasStill || posterUrl ? '预览帧' : '等待预览…'}
+        </p>
       ) : null}
       {sampled && attachMedia && playing ? (
         <p className="decode-badge decode-badge-quality">{settings.maxFps}fps 采样</p>
@@ -574,6 +582,7 @@ export const VideoSurface = memo(VideoSurfaceImpl, (prev, next) => {
     prev.playing === next.playing &&
     prev.playbackRate === next.playbackRate &&
     prev.seekGeneration === next.seekGeneration &&
-    prev.armed === next.armed
+    prev.armed === next.armed &&
+    prev.posterUrl === next.posterUrl
   )
 })

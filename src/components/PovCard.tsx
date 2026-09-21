@@ -35,6 +35,7 @@ export function PovCard({
 }: PovCardProps) {
   const { armed, toggle } = usePlaybackArm(pov.id)
   const [mediaUrl, setMediaUrl] = useState<string | null>(null)
+  const [posterUrl, setPosterUrl] = useState<string | null>(null)
   const [unplayable, setUnplayable] = useState(false)
   const [draft, setDraft] = useState(pov.playerName)
   const [offsetDraft, setOffsetDraft] = useState(String(pov.offset))
@@ -66,6 +67,30 @@ export function PovCard({
       cancelled = true
     }
   }, [pov.filePath])
+
+  // Grid idle cards must not open a Chromium decoder; pull a cheap JPEG poster instead.
+  useEffect(() => {
+    let cancelled = false
+    const atRaw = expectedVideoTime(masterTime, pov.offset)
+    const at =
+      pov.duration > 0
+        ? Math.min(Math.max(0.5, atRaw), Math.max(0.5, pov.duration - 0.05))
+        : Math.max(0.5, atRaw > 0 ? atRaw : 1)
+    void window.povApi
+      .ensurePoster(pov.filePath, at)
+      .then((poster) => {
+        if (cancelled) return
+        if (poster.status === 'ready' && poster.url) setPosterUrl(poster.url)
+      })
+      .catch((error) => {
+        console.warn('[poster] ensure failed', pov.filePath, error)
+      })
+    return () => {
+      cancelled = true
+    }
+    // masterTime is read when seekGeneration changes (scrub/nudge), not every clock tick.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- intentional
+  }, [pov.filePath, pov.duration, pov.offset, seekGeneration])
 
   let statusLabel = '—'
   if (unplayable) statusLabel = '无法播放'
@@ -124,6 +149,7 @@ export function PovCard({
               playbackRate={playbackRate}
               seekGeneration={seekGeneration}
               armed={armed}
+              posterUrl={posterUrl}
               onDuration={(nextDuration) => onDuration(pov.id, nextDuration)}
               onError={() => setUnplayable(true)}
             />
