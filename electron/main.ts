@@ -9,7 +9,12 @@ import { probeFileDurations } from './mediaDuration'
 import { MediaRegistry } from './mediaRegistry'
 import { registerMediaProtocol } from './mediaProtocol'
 import { PosterService } from './posterService'
+import { applyProjectUserData } from './projectUserData'
 import { ProxyService } from './proxyService'
+
+// Before ready: keep proxies/posters under the repo, not %APPDATA%.
+applyProjectUserData()
+
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.webm'])
 

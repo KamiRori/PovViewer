@@ -134,10 +134,10 @@ missing       = false
     └─ 不能直接播（常见于 MKV、HEVC）
            │
            Phase 1–5：卡片占位 “无法直接播放”
-           Phase 6：FFmpeg 写入 userData/proxies/，网格改播代理
+           Phase 6：FFmpeg 写入项目目录 minecraft-pov-viewer/proxies/，网格改播代理
 ```
 
-代理缓存键：文件绝对路径 + 大小 + mtime + 代理配置（网格预览或兼容转封装）。缓存目录是 `app.getPath('userData')/proxies`。删除代理不能影响源文件。
+代理缓存键：文件绝对路径 + 大小 + mtime + 代理配置（网格预览或兼容转封装）。缓存目录是项目根下的 `minecraft-pov-viewer/proxies`（Electron `userData` 已改到该文件夹，且已 gitignore）。删除代理不能影响源文件。
 
 Phase 6 的网格预览规格：约 320×180、15fps、无音频或音频被丢弃。Focus 优先播原片；原片不能播时才退回兼容代理。
 
