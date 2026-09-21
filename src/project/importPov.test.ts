@@ -14,7 +14,7 @@ describe('importPovPaths', () => {
       offset: 0,
       enabled: true,
       muted: true,
-      playbackSource: 'proxy',
+      playbackSource: 'original',
       metadataReady: false,
       missing: false
     })
@@ -39,7 +39,7 @@ describe('importPovPaths', () => {
         offset: 0,
         enabled: true,
         muted: true,
-        playbackSource: 'proxy',
+        playbackSource: 'original',
         metadataReady: false,
         missing: false
       }

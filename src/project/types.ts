@@ -17,7 +17,7 @@ export interface POVRuntime extends POV {
   missing: boolean
 }
 
-export const DEFAULT_PLAYBACK_SOURCE: PlaybackSource = 'proxy'
+export const DEFAULT_PLAYBACK_SOURCE: PlaybackSource = 'original'
 
 export function isPlaybackSource(value: unknown): value is PlaybackSource {
   return value === 'original' || value === 'proxy'

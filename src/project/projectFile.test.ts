@@ -11,7 +11,7 @@ function samplePov(overrides: Partial<POVRuntime> = {}): POVRuntime {
     offset: 0,
     enabled: true,
     muted: true,
-    playbackSource: 'proxy',
+    playbackSource: 'original',
     metadataReady: true,
     missing: false,
     ...overrides
@@ -40,14 +40,14 @@ describe('serializeProject', () => {
       offset: 0,
       enabled: true,
       muted: true,
-      playbackSource: 'proxy'
+      playbackSource: 'original'
     })
     expect(json.povs[0]).not.toHaveProperty('duration')
   })
 
-  it('round-trips an original playbackSource', () => {
-    const json = serializeProject([samplePov({ playbackSource: 'original' })])
-    expect(json.povs[0]?.playbackSource).toBe('original')
+  it('round-trips a proxy playbackSource', () => {
+    const json = serializeProject([samplePov({ playbackSource: 'proxy' })])
+    expect(json.povs[0]?.playbackSource).toBe('proxy')
   })
 })
 
@@ -63,7 +63,7 @@ describe('parseProjectJson', () => {
     if (!parsed.ok) return
     expect(parsed.runtime[0]?.duration).toBe(0)
     expect(parsed.runtime[0]?.metadataReady).toBe(false)
-    expect(parsed.runtime[0]?.playbackSource).toBe('proxy')
+    expect(parsed.runtime[0]?.playbackSource).toBe('original')
     expect(parsed.project.povs[0]?.playerName).toBe('Alice')
   })
 
@@ -86,7 +86,7 @@ describe('parseProjectJson', () => {
     )
     expect(parsed.ok).toBe(true)
     if (!parsed.ok) return
-    expect(parsed.runtime[0]?.playbackSource).toBe('proxy')
+    expect(parsed.runtime[0]?.playbackSource).toBe('original')
   })
 
   it('rejects unsupported versions', () => {
