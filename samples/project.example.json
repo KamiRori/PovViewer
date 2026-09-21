@@ -8,7 +8,8 @@
       "filePath": "D:/POV/Alice.mp4",
       "offset": 0,
       "enabled": true,
-      "muted": true
+      "muted": true,
+      "playbackSource": "original"
     },
     {
       "id": "bob",
@@ -16,7 +17,8 @@
       "filePath": "D:/POV/Bob.mp4",
       "offset": 13.42,
       "enabled": true,
-      "muted": true
+      "muted": true,
+      "playbackSource": "proxy"
     }
   ]
 }
