@@ -63,6 +63,14 @@ export interface PovApi {
   ensurePreviewProxy: (filePath: string) => Promise<ProxyStatusDto>
   getPreviewProxyStatus: (filePath: string) => Promise<ProxyStatusDto | null>
   ensurePreviewProxies: (paths: string[]) => Promise<ProxyStatusDto[]>
+  onProxyProgress: (
+    listener: (payload: {
+      completed: number
+      total: number
+      sourcePath: string
+      status: string
+    }) => void
+  ) => () => void
   toMediaUrl: (filePath: string) => Promise<string>
   probeMediaDurations: (paths: string[]) => Promise<MediaDurationDto[]>
   ensurePoster: (filePath: string, atSeconds?: number) => Promise<PosterDto>

@@ -15,5 +15,6 @@ export const IpcChannel = {
   getDebugSnapshot: 'debug:getSnapshot',
   ensurePreviewProxy: 'proxy:ensurePreview',
   getPreviewProxyStatus: 'proxy:getStatus',
-  ensurePreviewProxies: 'proxy:ensureMany'
+  ensurePreviewProxies: 'proxy:ensureMany',
+  proxyProgress: 'proxy:progress'
 } as const

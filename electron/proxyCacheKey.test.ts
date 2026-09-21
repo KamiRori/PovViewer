@@ -16,10 +16,10 @@ describe('proxy cache key', () => {
 })
 
 describe('resolveProxyConcurrency', () => {
-  it('defaults to logical CPU count (min 2)', () => {
+  it('defaults to about half the logical CPUs (min 2) for segment headroom', () => {
     expect(resolveProxyConcurrency(1, undefined)).toBe(2)
-    expect(resolveProxyConcurrency(8, undefined)).toBe(8)
-    expect(resolveProxyConcurrency(32, undefined)).toBe(32)
+    expect(resolveProxyConcurrency(8, undefined)).toBe(4)
+    expect(resolveProxyConcurrency(32, undefined)).toBe(16)
   })
 
   it('honors POV_PROXY_CONCURRENCY override', () => {
@@ -28,9 +28,9 @@ describe('resolveProxyConcurrency', () => {
   })
 
   it('ignores invalid env and caps at 64', () => {
-    expect(resolveProxyConcurrency(8, 'nope')).toBe(8)
-    expect(resolveProxyConcurrency(8, '0')).toBe(8)
-    expect(resolveProxyConcurrency(128, undefined)).toBe(64)
+    expect(resolveProxyConcurrency(8, 'nope')).toBe(4)
+    expect(resolveProxyConcurrency(8, '0')).toBe(4)
+    expect(resolveProxyConcurrency(256, undefined)).toBe(64)
     expect(resolveProxyConcurrency(8, '99')).toBe(64)
   })
 })

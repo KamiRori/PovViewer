@@ -321,15 +321,28 @@ function registerIpc(): void {
 
   ipcMain.handle(IpcChannel.ensurePreviewProxies, async (_event, paths: unknown) => {
     if (!Array.isArray(paths)) return []
-    const jobs = paths
-      .filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
-      .map(async (entry) => {
-        const status = await proxyService.ensurePreview(entry)
-        if (status.status === 'ready' && status.proxyPath) {
-          mediaRegistry.register(status.proxyPath)
+    const list = paths.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
+    const total = list.length
+    let completed = 0
+    const jobs = list.map(async (entry) => {
+      const status = await proxyService.ensurePreview(entry)
+      if (status.status === 'ready' && status.proxyPath) {
+        mediaRegistry.register(status.proxyPath)
+      }
+      completed += 1
+      const payload = {
+        completed,
+        total,
+        sourcePath: entry,
+        status: status.status
+      }
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (!window.isDestroyed()) {
+          window.webContents.send(IpcChannel.proxyProgress, payload)
         }
-        return status
-      })
+      }
+      return status
+    })
     return Promise.all(jobs)
   })
 }

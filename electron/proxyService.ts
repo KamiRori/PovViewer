@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto'
-import { spawn } from 'node:child_process'
 import { access, mkdir, stat } from 'node:fs/promises'
 import { cpus } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
 import ffmpegPath from 'ffmpeg-static'
+import { encodePreviewProxyFast, resolveJobParallelism } from './proxyEncode'
 
 export type ProxyKind = 'preview'
 
@@ -28,8 +28,9 @@ interface QueueItem {
 }
 
 /**
- * Parallel ffmpeg jobs for intentional 「生成预览代理」.
- * Default: one job per logical CPU. Override with POV_PROXY_CONCURRENCY.
+ * Parallel ffmpeg file-jobs for intentional 「生成预览代理」.
+ * Default: about half the logical CPUs as file-jobs so each long POV can
+ * still slice across the remaining cores. Override with POV_PROXY_CONCURRENCY.
  */
 export function resolveProxyConcurrency(
   cpuCount = cpus().length,
@@ -38,7 +39,8 @@ export function resolveProxyConcurrency(
   const parsed = envValue != null && envValue.trim() !== '' ? Number.parseInt(envValue, 10) : NaN
   if (Number.isFinite(parsed) && parsed >= 1) return Math.min(64, parsed)
   const n = Number.isFinite(cpuCount) && cpuCount > 0 ? Math.floor(cpuCount) : 4
-  return Math.max(2, Math.min(64, n))
+  // Leave headroom for per-file segment parallelism on multi-hour OBS takes.
+  return Math.max(2, Math.min(64, Math.ceil(n / 2)))
 }
 
 export class ProxyService {
@@ -48,11 +50,13 @@ export class ProxyService {
   private readonly waiters = new Map<string, Array<(status: ProxyStatus) => void>>()
   private running = 0
   private readonly concurrency: number
+  private readonly cpuCount: number
   private dirReady: Promise<string> | null = null
 
-  constructor(concurrency = resolveProxyConcurrency()) {
+  constructor(concurrency = resolveProxyConcurrency(), cpuCount = cpus().length) {
     this.concurrency = concurrency
-    console.log(`[proxy] encode concurrency = ${this.concurrency}`)
+    this.cpuCount = cpuCount > 0 ? cpuCount : 4
+    console.log(`[proxy] encode concurrency = ${this.concurrency} (cpus=${this.cpuCount})`)
   }
 
   private cacheKey(sourcePath: string, kind: ProxyKind, size: number, mtimeMs: number): string {
@@ -223,7 +227,13 @@ export class ProxyService {
         `${this.cacheKey(item.sourcePath, item.kind, s.size, s.mtimeMs)}.mp4`
       )
 
-      await encodePreviewProxy(ffmpegPath, item.sourcePath, proxyPath)
+      const parallel = resolveJobParallelism(this.cpuCount, this.running, this.queue.length)
+      const started = Date.now()
+      const stats = await encodePreviewProxyFast(ffmpegPath, item.sourcePath, proxyPath, parallel)
+      console.log(
+        `[proxy] ready ${item.sourcePath} in ${((Date.now() - started) / 1000).toFixed(1)}s ` +
+          `(segments=${stats.segments}, threads=${stats.threads}, duration=${stats.duration ?? '?'})`
+      )
 
       const ready: ProxyStatus = {
         kind: item.kind,
@@ -248,55 +258,6 @@ export class ProxyService {
       this.settleWaiters(key, failed)
     }
   }
-}
-
-function encodePreviewProxy(bin: string, input: string, output: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // Throughput strategy: many parallel jobs × ultrafast × 1 thread each
-    // so batch 「生成预览代理」 saturates CPU without intra-job oversubscription.
-    const args = [
-      '-hide_banner',
-      '-nostdin',
-      '-y',
-      '-threads',
-      '1',
-      '-i',
-      input,
-      '-vf',
-      'scale=320:180:force_original_aspect_ratio=decrease,pad=320:180:(ow-iw)/2:(oh-ih)/2',
-      '-r',
-      '15',
-      '-an',
-      '-c:v',
-      'libx264',
-      '-preset',
-      'ultrafast',
-      '-tune',
-      'fastdecode',
-      '-crf',
-      '30',
-      '-pix_fmt',
-      'yuv420p',
-      '-threads',
-      '1',
-      '-x264-params',
-      'threads=1:sliced-threads=0',
-      '-movflags',
-      '+faststart',
-      output
-    ]
-    const child = spawn(bin, args, { windowsHide: true })
-    let stderr = ''
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
-      if (stderr.length > 4000) stderr = stderr.slice(-4000)
-    })
-    child.on('error', (error) => reject(error))
-    child.on('close', (code) => {
-      if (code === 0) resolve()
-      else reject(new Error(`FFmpeg 退出码 ${code}: ${stderr.trim() || '无输出'}`))
-    })
-  })
 }
 
 /** Pure helper for tests. */

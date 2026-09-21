@@ -43,6 +43,12 @@ export function App() {
   const visible = state.povs.filter((pov) => pov.enabled)
 
   useEffect(() => {
+    return window.povApi.onProxyProgress(({ completed, total }) => {
+      setHint(`正在生成网格预览代理（${completed}/${total}）…`)
+    })
+  }, [])
+
+  useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {

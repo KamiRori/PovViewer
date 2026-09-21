@@ -39,6 +39,25 @@ const povApi = {
     ipcRenderer.invoke(IpcChannel.getPreviewProxyStatus, filePath),
   ensurePreviewProxies: (paths: string[]): Promise<ProxyStatusDto[]> =>
     ipcRenderer.invoke(IpcChannel.ensurePreviewProxies, paths),
+  onProxyProgress: (
+    listener: (payload: {
+      completed: number
+      total: number
+      sourcePath: string
+      status: string
+    }) => void
+  ): (() => void) => {
+    const handler = (
+      _event: Electron.IpcRendererEvent,
+      payload: { completed: number; total: number; sourcePath: string; status: string }
+    ): void => {
+      listener(payload)
+    }
+    ipcRenderer.on(IpcChannel.proxyProgress, handler)
+    return () => {
+      ipcRenderer.removeListener(IpcChannel.proxyProgress, handler)
+    }
+  },
   toMediaUrl: (filePath: string): Promise<string> => ipcRenderer.invoke(IpcChannel.toMediaUrl, filePath),
   probeMediaDurations: (
     paths: string[]

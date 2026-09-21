@@ -139,7 +139,7 @@ missing       = false
 
 代理缓存键：文件绝对路径 + 大小 + mtime + 代理配置（网格预览或兼容转封装）。缓存目录是项目根下的 `minecraft-pov-viewer/proxies`（Electron `userData` 已改到该文件夹，且已 gitignore）。删除代理不能影响源文件。
 
-Phase 6 的网格预览规格：约 320×180、15fps、无音频或音频被丢弃。主动「生成预览代理」默认按逻辑 CPU 核数并行 FFmpeg（`ultrafast`），以打满 CPU；可用环境变量 `POV_PROXY_CONCURRENCY` 覆盖。Focus 优先播原片；原片不能播时才退回兼容代理。
+Phase 6 的网格预览规格：约 320×180、15fps、无音频或音频被丢弃。主动「生成预览代理」会打满 CPU：文件级并发约一半逻辑核，长视频再切段并行编码（`ultrafast` + `hwaccel auto`）；可用 `POV_PROXY_CONCURRENCY` 覆盖文件并发。Focus 优先播原片；原片不能播时才退回兼容代理。
 
 网格里的 `<video>` 从 Phase 1 起遵守：
 
