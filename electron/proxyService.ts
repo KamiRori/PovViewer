@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
 import { access, mkdir, stat } from 'node:fs/promises'
+import { cpus } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
 import ffmpegPath from 'ffmpeg-static'
@@ -26,14 +27,33 @@ interface QueueItem {
   reject: (error: Error) => void
 }
 
+/**
+ * Parallel ffmpeg jobs for intentional 「生成预览代理」.
+ * Default: one job per logical CPU. Override with POV_PROXY_CONCURRENCY.
+ */
+export function resolveProxyConcurrency(
+  cpuCount = cpus().length,
+  envValue = process.env.POV_PROXY_CONCURRENCY
+): number {
+  const parsed = envValue != null && envValue.trim() !== '' ? Number.parseInt(envValue, 10) : NaN
+  if (Number.isFinite(parsed) && parsed >= 1) return Math.min(64, parsed)
+  const n = Number.isFinite(cpuCount) && cpuCount > 0 ? Math.floor(cpuCount) : 4
+  return Math.max(2, Math.min(64, n))
+}
+
 export class ProxyService {
   private readonly statuses = new Map<string, ProxyStatus>()
   private readonly queue: QueueItem[] = []
   /** Extra resolvers waiting on an in-flight encode for the same key. */
   private readonly waiters = new Map<string, Array<(status: ProxyStatus) => void>>()
   private running = 0
-  private readonly concurrency = 1
+  private readonly concurrency: number
   private dirReady: Promise<string> | null = null
+
+  constructor(concurrency = resolveProxyConcurrency()) {
+    this.concurrency = concurrency
+    console.log(`[proxy] encode concurrency = ${this.concurrency}`)
+  }
 
   private cacheKey(sourcePath: string, kind: ProxyKind, size: number, mtimeMs: number): string {
     const hash = createHash('sha1')
@@ -232,8 +252,14 @@ export class ProxyService {
 
 function encodePreviewProxy(bin: string, input: string, output: string): Promise<void> {
   return new Promise((resolve, reject) => {
+    // Throughput strategy: many parallel jobs × ultrafast × 1 thread each
+    // so batch 「生成预览代理」 saturates CPU without intra-job oversubscription.
     const args = [
+      '-hide_banner',
+      '-nostdin',
       '-y',
+      '-threads',
+      '1',
       '-i',
       input,
       '-vf',
@@ -244,9 +270,17 @@ function encodePreviewProxy(bin: string, input: string, output: string): Promise
       '-c:v',
       'libx264',
       '-preset',
-      'veryfast',
+      'ultrafast',
+      '-tune',
+      'fastdecode',
       '-crf',
-      '28',
+      '30',
+      '-pix_fmt',
+      'yuv420p',
+      '-threads',
+      '1',
+      '-x264-params',
+      'threads=1:sliced-threads=0',
       '-movflags',
       '+faststart',
       output
