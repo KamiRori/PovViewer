@@ -181,7 +181,7 @@ export function App() {
     setHint(null)
     clearSyncReport()
     try {
-      const filePath = await window.povApi.selectJsonFile('Open Project')
+      const filePath = await window.povApi.selectJsonFile('打开项目')
       if (!filePath) return
       const text = await window.povApi.readTextFile(filePath)
       const parsed = parseProjectJson(text)
@@ -209,7 +209,7 @@ export function App() {
       const missingCount = withMissing.filter((pov) => pov.missing).length
       setHint(
         missingCount > 0
-          ? `已打开项目（${missingCount} 个 Missing File）`
+          ? `已打开项目（${missingCount} 个文件缺失）`
           : `已打开 ${fileNameFromPath(filePath)}`
       )
     } catch (error) {
@@ -235,7 +235,7 @@ export function App() {
       setHint(`已重新定位 ${fileNameFromPath(nextPath)}`)
     } catch (error) {
       console.error('[project] locate failed', error)
-      setHint('Locate File 失败')
+      setHint('定位文件失败')
     } finally {
       setBusy(false)
     }
@@ -280,7 +280,7 @@ export function App() {
     setHint(null)
     clearSyncReport()
     try {
-      const filePath = await window.povApi.selectJsonFile('Import Sync')
+      const filePath = await window.povApi.selectJsonFile('导入同步')
       if (!filePath) return
       const text = await window.povApi.readTextFile(filePath)
       const parsed = parseSyncJson(text)
@@ -311,11 +311,11 @@ export function App() {
         importFiles(paths)
         await applyFastDurations(paths)
       } else {
-        setHint('未能导入拖入的文件。请使用 .mp4 / .mkv / .mov / .webm，或改用 Import POV。')
+        setHint('未能导入拖入的文件。请使用 .mp4 / .mkv / .mov / .webm，或改用「文件 → 导入 POV」。')
       }
     } catch (error) {
       console.error('[drop] import failed', error)
-      setHint('拖拽导入失败，请改用 Import POV。')
+      setHint('拖拽导入失败，请改用「文件 → 导入 POV」。')
     } finally {
       setBusy(false)
     }
@@ -416,7 +416,7 @@ export function App() {
         {visible.length === 0 ? (
           <section className="empty">
             <h2>还没有 POV</h2>
-            <p>点击 Import POV，或把视频文件拖进窗口。也可用 Open Project 打开 project.json。</p>
+            <p>点击「文件 → 导入 POV」，或把视频文件拖进窗口。也可用「打开项目」加载 project.json。</p>
           </section>
         ) : (
           <PovGrid

@@ -197,7 +197,7 @@ export function PovCard({
   }, [])
 
   let statusLabel = '—'
-  if (pov.missing) statusLabel = 'Missing File'
+  if (pov.missing) statusLabel = '文件缺失'
   else if (proxyMissing) statusLabel = '代理未生成'
   else if (unplayable) statusLabel = '无法播放'
   else if (status === 'pending') statusLabel = '读取中'
@@ -300,7 +300,7 @@ export function PovCard({
       data-highlighted={view.activeId === pov.id ? 'true' : 'false'}
       role="button"
       aria-pressed={effectiveArmed}
-      title="单击高亮并参与 · 再点取消 · 双击 Focus"
+      title="单击高亮并参与 · 再点取消 · 双击进入焦点"
       tabIndex={0}
       onClick={onCardClick}
       onDoubleClick={onCardDoubleClick}
@@ -309,12 +309,12 @@ export function PovCard({
       <div className="pov-frame">
         {pov.missing ? (
           <div className="pov-missing">
-            <p className="pov-missing-title">Missing File</p>
+            <p className="pov-missing-title">文件缺失</p>
             <p className="pov-missing-name" title={pov.filePath}>
               {fileName}
             </p>
             <button type="button" onClick={() => onLocate(pov.id)}>
-              Locate File
+              定位文件
             </button>
           </div>
         ) : proxyMissing ? (

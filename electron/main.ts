@@ -163,7 +163,7 @@ function isFeaturePerfReport(value: unknown): value is FeaturePerfReport {
 function registerIpc(): void {
   ipcMain.handle(IpcChannel.selectVideoFiles, async () => {
     const result = await dialog.showOpenDialog({
-      title: 'Import POV',
+      title: '导入 POV',
       properties: ['openFile', 'multiSelections'],
       filters: [{ name: 'Video', extensions: ['mp4', 'mkv', 'mov', 'webm'] }]
     })
@@ -175,7 +175,7 @@ function registerIpc(): void {
 
   ipcMain.handle(IpcChannel.selectJsonFile, async (_event, title: unknown) => {
     const result = await dialog.showOpenDialog({
-      title: typeof title === 'string' && title.trim() ? title : 'Open JSON',
+      title: typeof title === 'string' && title.trim() ? title : '打开 JSON',
       properties: ['openFile'],
       filters: [{ name: 'JSON', extensions: ['json'] }]
     })
@@ -213,7 +213,7 @@ function registerIpc(): void {
 
   ipcMain.handle(IpcChannel.saveJsonFile, async (_event, defaultName: unknown) => {
     const result = await dialog.showSaveDialog({
-      title: 'Save Project',
+      title: '保存项目',
       defaultPath: typeof defaultName === 'string' && defaultName.trim() ? defaultName : 'project.json',
       filters: [{ name: 'JSON', extensions: ['json'] }]
     })

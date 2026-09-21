@@ -59,7 +59,7 @@ export function TimelineBar({
         step={0.001}
         value={masterTime}
         disabled={disabled}
-        aria-label="Master Timeline"
+        aria-label="主时间轴"
         onChange={(event) => onScrub(Number(event.target.value))}
         onPointerUp={onCommitScrub}
         onPointerCancel={onCommitScrub}
@@ -78,7 +78,7 @@ export function TimelineBar({
           +10s ▶
         </button>
         <label className="speed">
-          Speed
+          倍速
           <select
             value={playbackRate}
             disabled={disabled}
@@ -109,7 +109,7 @@ export function TimelineBar({
       <div className="preview-settings">
         <label
           className="speed"
-          title="均为连续播放。低画质放宽同步校正。单击卡片切换是否参与（挂载解码器）；双击进入 Focus。"
+          title="均为连续播放。低画质放宽同步校正。单击卡片切换是否参与（挂载解码器）；双击进入焦点。"
         >
           预览画质
           <select
@@ -143,7 +143,7 @@ export function TimelineBar({
         >
           解码 {liveStats.live}/{liveStats.max} · 参与 {armedCount}
         </span>
-        <span className="preview-hint">单击高亮并参与 · 双击 Focus</span>
+        <span className="preview-hint">单击高亮并参与 · 双击进入焦点</span>
       </div>
     </footer>
   )
