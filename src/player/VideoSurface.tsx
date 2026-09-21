@@ -62,6 +62,8 @@ function VideoSurfaceImpl({
   const [visible, setVisible] = useState(true)
   const [hasStill, setHasStill] = useState(false)
   const [mediaReady, setMediaReady] = useState(false)
+  /** Briefly re-attach while paused so nudge / scrub-commit can refresh the still frame. */
+  const [pausedSeekAttach, setPausedSeekAttach] = useState(false)
   const offsetRef = useRef(offset)
   const durationRef = useRef(duration)
   const metadataReadyRef = useRef(metadataReady)
@@ -77,6 +79,7 @@ function VideoSurfaceImpl({
   const playRequestRef = useRef<Promise<void> | null>(null)
   const liveRef = useRef(false)
   const probedSrcRef = useRef<string | null>(null)
+  const lastSeekGenerationRef = useRef(seekGeneration)
   offsetRef.current = offset
   durationRef.current = duration
   metadataReadyRef.current = metadataReady
@@ -87,8 +90,11 @@ function VideoSurfaceImpl({
   armedRef.current = armed
 
   const sampled = settings.playbackMode === 'sampled'
-  /** Only armed cards keep a live decoder pipeline attached. */
-  const attachMedia = armed && visible
+  /**
+   * Idle (paused) must not keep HTML5 decoders warm — that alone can pin high CPU
+   * even with video.pause(). Only attach while playing, or briefly after a paused seek.
+   */
+  const attachMedia = armed && visible && (playing || pausedSeekAttach)
   const live = attachMedia && !sampled && playing
   liveRef.current = live
 
@@ -105,6 +111,25 @@ function VideoSurfaceImpl({
     observer.observe(host)
     return () => observer.disconnect()
   }, [])
+
+  // Pause → drop decoder immediately. Paused seeks briefly re-attach, then drop again.
+  useEffect(() => {
+    if (playing) {
+      setPausedSeekAttach(false)
+      lastSeekGenerationRef.current = seekGeneration
+      return
+    }
+    if (!armed || !visible) {
+      setPausedSeekAttach(false)
+      lastSeekGenerationRef.current = seekGeneration
+      return
+    }
+    if (seekGeneration === lastSeekGenerationRef.current) return
+    lastSeekGenerationRef.current = seekGeneration
+    setPausedSeekAttach(true)
+    const timer = window.setTimeout(() => setPausedSeekAttach(false), 2000)
+    return () => window.clearTimeout(timer)
+  }, [playing, armed, visible, seekGeneration])
 
   // Attach / release the media element. Idle cards must not keep HW decoders warm.
   useEffect(() => {
@@ -123,11 +148,12 @@ function VideoSurfaceImpl({
     if (video.dataset.mediaSrc !== src) {
       video.dataset.mediaSrc = src
       video.src = src
-      video.preload = 'auto'
+      // Prefer metadata while doing a paused still refresh; auto only for live play.
+      video.preload = playing ? 'auto' : 'metadata'
       video.load()
       setMediaReady(false)
     }
-  }, [attachMedia, src])
+  }, [attachMedia, src, playing])
 
   // One-shot metadata + still probe for cards that are not armed yet (timeline duration).
   useEffect(() => {
@@ -215,11 +241,16 @@ function VideoSurfaceImpl({
     video.pause()
     video.playbackRate = baseRateRef.current
     void seekAndVerify(video, expected, seekingRef, seekTokenRef, hardSeekCooldownUntilRef).then((ok) => {
-      if (!ok || !armedRef.current) return
+      if (!ok || !armedRef.current) {
+        if (!playingRef.current) setPausedSeekAttach(false)
+        return
+      }
       video.playbackRate = baseRateRef.current
       softSyncSuppressUntilRef.current = performance.now() + SOFT_SYNC_SUPPRESS_MS
       captureStill(video, stillRef.current, () => setHasStill(true))
       if (!sampled && playingRef.current && liveRef.current) requestPlay(video, playRequestRef)
+      // Paused seek only needed the still — drop the decoder again.
+      if (!playingRef.current) setPausedSeekAttach(false)
     })
   }, [seekGeneration, attachMedia, mediaReady, masterTimeRef, sampled])
 
@@ -447,7 +478,9 @@ function VideoSurfaceImpl({
         className={`video-still${attachMedia ? ' video-still-hidden' : ''}${hasStill ? '' : ' is-empty'}`}
         aria-hidden={attachMedia}
       />
-      {!attachMedia ? <p className="decode-badge">已卸载解码器</p> : null}
+      {!attachMedia ? (
+        <p className="decode-badge">{armed && !playing ? '暂停·静止帧' : '已卸载解码器'}</p>
+      ) : null}
       {sampled && attachMedia && playing ? (
         <p className="decode-badge decode-badge-quality">{settings.maxFps}fps 采样</p>
       ) : null}
