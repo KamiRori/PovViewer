@@ -1,5 +1,5 @@
 import { cpSync, existsSync, mkdirSync, readdirSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { app } from 'electron'
 
 /** Compiled main lives at `<project>/out/main/index.js`. */
@@ -7,9 +7,36 @@ export function projectRootFromMainBundle(mainDir = __dirname): string {
   return join(mainDir, '../..')
 }
 
-/** Project-local cache root (proxies, posters, Chromium session data). */
+/** Dev-mode cache root next to the repo. */
 export function projectUserDataPath(mainDir = __dirname): string {
   return join(projectRootFromMainBundle(mainDir), 'minecraft-pov-viewer')
+}
+
+/**
+ * Resolve where proxies/posters/Chromium session data should live.
+ * - Dev: `<repo>/minecraft-pov-viewer`
+ * - Portable exe: next to the executable
+ * - Installed build: Electron default userData (%APPDATA%/…)
+ */
+export function resolveUserDataPath(options: {
+  isPackaged: boolean
+  mainDir?: string
+  execPath?: string
+  portableDir?: string | null
+  defaultUserData?: string
+}): string {
+  if (!options.isPackaged) {
+    return projectUserDataPath(options.mainDir)
+  }
+  const portable = options.portableDir?.trim()
+  if (portable) {
+    return join(portable, 'minecraft-pov-viewer')
+  }
+  if (options.defaultUserData && options.defaultUserData.trim() !== '') {
+    return options.defaultUserData
+  }
+  const execDir = dirname(options.execPath ?? process.execPath)
+  return join(execDir, 'minecraft-pov-viewer')
 }
 
 function isEmptyDir(dir: string): boolean {
@@ -21,8 +48,7 @@ function isEmptyDir(dir: string): boolean {
 }
 
 /**
- * Copy legacy Electron userData (e.g. %APPDATA%/minecraft-pov-viewer) into the
- * project folder when the destination is still empty / missing cache dirs.
+ * Copy legacy Electron userData into the chosen cache folder when empty.
  */
 export function migrateLegacyUserData(from: string, to: string): void {
   if (from === to || !existsSync(from)) return
@@ -53,12 +79,22 @@ export function migrateLegacyUserData(from: string, to: string): void {
 }
 
 /**
- * Point Electron userData at `<project>/minecraft-pov-viewer` before app ready.
- * Must run once at process start (before `app.whenReady()`).
+ * Point Electron userData at the resolved cache root before app ready.
  */
 export function applyProjectUserData(mainDir = __dirname): { from: string; to: string } {
   const from = app.getPath('userData')
-  const to = projectUserDataPath(mainDir)
+  const to = resolveUserDataPath({
+    isPackaged: app.isPackaged,
+    mainDir,
+    execPath: process.execPath,
+    portableDir: process.env.PORTABLE_EXECUTABLE_DIR ?? null,
+    defaultUserData: from
+  })
+  if (to === from) {
+    mkdirSync(to, { recursive: true })
+    console.log(`[cache] userData → ${to} (default)`)
+    return { from, to }
+  }
   mkdirSync(to, { recursive: true })
   migrateLegacyUserData(from, to)
   app.setPath('userData', to)

@@ -139,7 +139,7 @@ missing       = false
 
 代理缓存键：文件绝对路径 + 大小 + mtime + 代理配置（网格预览或兼容转封装）。缓存目录是项目根下的 `minecraft-pov-viewer/proxies`（Electron `userData` 已改到该文件夹，且已 gitignore）。删除代理不能影响源文件。
 
-Phase 6 的网格预览规格：约 320×180、15fps、无音频或音频被丢弃。主动「生成预览代理」会打满 CPU：文件级并发约一半逻辑核，长视频再切段并行编码（`ultrafast` + `hwaccel auto`）；可用 `POV_PROXY_CONCURRENCY` 覆盖文件并发。Focus 优先播原片；原片不能播时才退回兼容代理。
+Phase 6 的网格预览规格：约 320×180、15fps、无音频或音频被丢弃。主动「生成预览代理」按约一半逻辑核做文件并发、每任务多线程 `ultrafast`；Windows 含非 ASCII 的路径（如 `桌面`）会先落到盘符下 `pov-viewer-work` 再写回缓存。可用 `POV_PROXY_CONCURRENCY` 覆盖文件并发。每张卡片可选 **代理 | 原片**（默认原片）；Focus 同样尊重卡片片源。
 
 网格里的 `<video>` 从 Phase 1 起遵守：
 
@@ -250,10 +250,11 @@ POV 文件 → 抽取音频 → 特征 → 互相关 → offset → SyncResult[]
 ## 12. 构建
 
 - 开发：electron-vite 启动主进程和渲染进程。
-- 生产：electron-builder 打出 Windows 安装包或免安装 exe，产品名 `MinecraftPOVViewer`。
-- 用户机器不需要 Node.js、不需要系统里预先安装 FFmpeg。若 Phase 6 需要 FFmpeg，把二进制打进应用，而不是调用用户 PATH 上的不确定版本。
+- 生产：`npm run dist` 用 electron-builder 打出 Windows portable / NSIS，产品名 `MinecraftPOVViewer`。
+- 用户机器不需要 Node.js、不需要系统里预先安装 FFmpeg；`ffmpeg-static` 打进应用（`asarUnpack`）。
+- 缓存目录：开发态为仓库下 `minecraft-pov-viewer/`；portable 在 exe 同级；安装版用 `%APPDATA%` 下的 Electron userData。
 
-Phase 1 不配置安装包，只要求 `dev` 脚本能打开窗口。打包放到 Phase 1 之后、功能冻结前，避免每个阶段都花时间在安装器上。建议在 Phase 5 结束后做第一次可分发构建，Phase 6 再把 FFmpeg 打进去。
+Phase 1 不配置安装包，只要求 `dev` 脚本能打开窗口。功能冻结后用 `npm run dist` 出可分发构建。
 
 ## 13. 测试策略
 
