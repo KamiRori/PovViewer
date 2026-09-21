@@ -207,7 +207,8 @@ function registerIpc(): void {
   ipcMain.handle(IpcChannel.probeMediaDurations, async (_event, paths: unknown) => {
     if (!Array.isArray(paths)) return []
     const list = paths.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
-    return probeFileDurations(list, 4)
+    // Caller often probes one path at a time for progressive UI; keep concurrency low when batched.
+    return probeFileDurations(list, Math.min(2, Math.max(1, list.length)))
   })
 
   ipcMain.handle(IpcChannel.openGpuDebug, () => {

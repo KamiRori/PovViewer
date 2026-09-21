@@ -58,22 +58,32 @@ export function App() {
 
   async function applyFastDurations(paths: string[]): Promise<void> {
     if (paths.length === 0) return
-    setHint(`正在快速读取时长（${paths.length}）…`)
+    let ready = 0
+    let failed = 0
+    setHint(`正在读取时长 0/${paths.length}…`)
     try {
-      const results = await window.povApi.probeMediaDurations(paths)
-      const ready = results
-        .filter((entry) => entry.duration !== null && Number.isFinite(entry.duration))
-        .map((entry) => ({ filePath: entry.filePath, duration: entry.duration as number }))
-      if (ready.length > 0) setDurationsByPath(ready)
-      const missed = paths.length - ready.length
+      // One file at a time so each card leaves「读取中」as soon as its moov/ffmpeg probe finishes.
+      for (let index = 0; index < paths.length; index += 1) {
+        const filePath = paths[index]
+        setHint(`正在读取时长 ${index + 1}/${paths.length}…`)
+        const results = await window.povApi.probeMediaDurations([filePath])
+        const entry = results[0]
+        if (entry?.duration !== null && entry?.duration !== undefined && Number.isFinite(entry.duration)) {
+          setDurationsByPath([{ filePath: entry.filePath, duration: entry.duration }])
+          ready += 1
+        } else {
+          failed += 1
+          console.warn('[media] duration probe missed', filePath, entry?.error, entry?.method)
+        }
+      }
       setHint(
-        missed > 0
-          ? `已读取 ${ready.length} 个时长，${missed} 个将回退浏览器探测`
-          : `已读取 ${ready.length} 个时长`
+        failed > 0
+          ? `时长就绪 ${ready}/${paths.length}（${failed} 个失败，可点选播放时再试）`
+          : `时长就绪 ${ready}/${paths.length}`
       )
     } catch (error) {
       console.error('[media] probe durations failed', error)
-      setHint('快速读取时长失败，将回退浏览器探测')
+      setHint('读取时长失败')
     }
   }
 

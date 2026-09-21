@@ -8,7 +8,6 @@ import {
   type PlaybackRate
 } from '../timeline/playbackMath'
 import { useMasterTimeRef } from '../timeline/store'
-import { enqueueMetadataProbe } from './mediaProbeQueue'
 import { useArmedCount } from './playbackArm'
 import { recordContinuousPlay, recordHardSeek, recordSampleSeek } from './perfCounters'
 import { usePreviewQuality } from './previewQuality'
@@ -156,30 +155,12 @@ function VideoSurfaceImpl({
     }
   }, [attachMedia, src, playing])
 
-  // One-shot metadata probe (queued, metadata-only — no seek/still decode on import).
+  // Duration comes from main-process probe on import (mp4 moov / ffmpeg).
+  // Do not open Chromium demuxers here — that fights disk IO on multi‑GB POV files
+  // and is why cards stayed on 读取中. Playing still reports duration via onLoadedMetadata.
   useEffect(() => {
-    if (attachMedia) return
-    if (probedSrcRef.current === src) return
-    if (metadataReady) {
-      probedSrcRef.current = src
-      return
-    }
-
-    const controller = new AbortController()
-    void enqueueMetadataProbe(src, controller.signal).then((result) => {
-      if (controller.signal.aborted) return
-      if (!result) {
-        // Soft failure: leave card pending so a later remount / play can retry.
-        return
-      }
-      probedSrcRef.current = src
-      onDurationRef.current(result.duration)
-    })
-
-    return () => {
-      controller.abort()
-    }
-  }, [attachMedia, src, metadataReady])
+    if (metadataReady) probedSrcRef.current = src
+  }, [metadataReady, src])
 
   useEffect(() => {
     const video = videoRef.current

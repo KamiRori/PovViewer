@@ -20,7 +20,7 @@ const povApi = {
   toMediaUrl: (filePath: string): Promise<string> => ipcRenderer.invoke(IpcChannel.toMediaUrl, filePath),
   probeMediaDurations: (
     paths: string[]
-  ): Promise<Array<{ filePath: string; duration: number | null; error?: string }>> =>
+  ): Promise<Array<{ filePath: string; duration: number | null; error?: string; method?: string }>> =>
     ipcRenderer.invoke(IpcChannel.probeMediaDurations, paths),
   /**
    * Must receive the original File from the drop event, one at a time.

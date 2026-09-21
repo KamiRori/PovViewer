@@ -32,6 +32,7 @@ export interface MediaDurationDto {
   filePath: string
   duration: number | null
   error?: string
+  method?: 'mp4-moov' | 'ffmpeg' | 'none'
 }
 
 export interface PovApi {
