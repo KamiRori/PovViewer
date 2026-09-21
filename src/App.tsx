@@ -250,7 +250,7 @@ export function App() {
       setHint(
         failed > 0
           ? `预览代理：${ready} 就绪，${failed} 失败（写入应用缓存，未改源文件）`
-          : `预览代理已就绪：${ready} 个（网格将自动改用低分辨率预览）`
+          : `预览代理已就绪：${ready} 个（网格将自动改用低分辨率预览；若仍无法播放请再点一次重新生成）`
       )
       setProxyEpoch((value) => value + 1)
     } catch (error) {

@@ -56,6 +56,7 @@ export function PovCard({
   const hostRef = useRef<HTMLElement>(null)
   const clickTimerRef = useRef(0)
   const [mediaUrl, setMediaUrl] = useState<string | null>(null)
+  const mediaUrlRef = useRef<string | null>(null)
   const [posterUrl, setPosterUrl] = useState<string | null>(null)
   const [unplayable, setUnplayable] = useState(false)
   const [draft, setDraft] = useState(pov.playerName)
@@ -80,6 +81,10 @@ export function PovCard({
   }, [pov.offset])
 
   useEffect(() => {
+    mediaUrlRef.current = mediaUrl
+  }, [mediaUrl])
+
+  useEffect(() => {
     if (pov.missing) {
       setMediaUrl(null)
       return
@@ -96,7 +101,10 @@ export function PovCard({
           const cached = await window.povApi.getPreviewProxyStatus(pov.filePath)
           if (cached?.status === 'ready' && cached.proxyPath) {
             const proxyUrl = await window.povApi.toMediaUrl(cached.proxyPath)
-            if (!cancelled) setMediaUrl(proxyUrl)
+            if (!cancelled) {
+              setUnplayable(false)
+              setMediaUrl(proxyUrl)
+            }
             return
           }
         }
@@ -305,6 +313,11 @@ export function PovCard({
                     const status = await window.povApi.ensurePreviewProxy(pov.filePath)
                     if (status.status === 'ready' && status.proxyPath) {
                       const proxyUrl = await window.povApi.toMediaUrl(status.proxyPath)
+                      // Same broken proxy already attached — do not loop.
+                      if (proxyUrl === mediaUrlRef.current) {
+                        setUnplayable(true)
+                        return
+                      }
                       setUnplayable(false)
                       setMediaUrl(proxyUrl)
                       return

@@ -104,6 +104,10 @@ function singlePassArgs(
     'ultrafast',
     '-tune',
     'fastdecode',
+    '-profile:v',
+    'baseline',
+    '-level',
+    '3.0',
     '-crf',
     '32',
     '-pix_fmt',
@@ -167,6 +171,9 @@ async function encodeSegmented(
     const buffers = await Promise.all(parts.map((part) => readFile(part)))
     await writeFile(joinedPath, Buffer.concat(buffers))
 
+    // Must re-encode (not stream-copy): byte-concatenated annex-B + `-c copy`
+    // produces odd timescales / mid-stream SPS that Chromium often rejects.
+    // At 320×180 this second pass is cheap compared with decoding the OBS source.
     await runFfmpeg(bin, [
       '-hide_banner',
       '-nostdin',
@@ -177,9 +184,25 @@ async function encodeSegmented(
       '15',
       '-i',
       joinedPath,
-      '-c',
-      'copy',
       '-an',
+      '-c:v',
+      'libx264',
+      '-preset',
+      'ultrafast',
+      '-tune',
+      'fastdecode',
+      '-profile:v',
+      'baseline',
+      '-level',
+      '3.0',
+      '-crf',
+      '32',
+      '-pix_fmt',
+      'yuv420p',
+      '-bf',
+      '0',
+      '-g',
+      '15',
       '-movflags',
       '+faststart',
       output
@@ -187,6 +210,23 @@ async function encodeSegmented(
   } finally {
     await rm(workDir, { recursive: true, force: true }).catch(() => undefined)
   }
+}
+
+/** Fail closed if the mux looks empty / undecodable before we hand it to Chromium. */
+async function assertProxyDecodable(bin: string, filePath: string): Promise<void> {
+  await runFfmpeg(bin, [
+    '-hide_banner',
+    '-nostdin',
+    '-v',
+    'error',
+    '-i',
+    filePath,
+    '-frames:v',
+    '1',
+    '-f',
+    'null',
+    '-'
+  ])
 }
 
 /**
@@ -206,10 +246,12 @@ export async function encodePreviewProxyFast(
 
   if (segments.length <= 1) {
     await encodeSingle(bin, input, output, slots)
+    await assertProxyDecodable(bin, output)
     return { segments: 1, threads: slots, duration }
   }
 
   const threadsPerSegment = Math.max(1, Math.floor(slots / segments.length))
   await encodeSegmented(bin, input, output, segments, threadsPerSegment)
+  await assertProxyDecodable(bin, output)
   return { segments: segments.length, threads: threadsPerSegment, duration }
 }

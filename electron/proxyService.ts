@@ -18,7 +18,7 @@ export interface ProxyStatus {
   error?: string
 }
 
-const PREVIEW_LABEL = 'preview-320x180-15fps-v1'
+const PREVIEW_LABEL = 'preview-320x180-15fps-v2'
 
 interface QueueItem {
   sourcePath: string
