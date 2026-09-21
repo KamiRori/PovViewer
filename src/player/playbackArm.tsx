@@ -57,12 +57,11 @@ export function PlaybackArmProvider({ children }: { children: ReactNode }) {
     [setArmed]
   )
 
-  const ensure = useCallback((id: string, defaultArmed?: boolean) => {
+  /** First card stays idle too — user explicitly arms cards for decode. */
+  const ensure = useCallback((id: string, defaultArmed = false) => {
     if (knownRef.current.has(id)) return
     knownRef.current.add(id)
-    // First card arms by default; later imports stay idle until the user clicks.
-    const shouldArm = defaultArmed ?? armedRef.current.size === 0
-    if (shouldArm) armedRef.current.add(id)
+    if (defaultArmed) armedRef.current.add(id)
     emit()
   }, [emit])
 
@@ -108,7 +107,7 @@ function usePlaybackArmApi(): PlaybackArmApi {
   return api
 }
 
-/** Subscribe to arm changes for one POV. First card arms by default. */
+/** Subscribe to arm changes for one POV. Cards start idle (no decoder). */
 export function usePlaybackArm(id: string): { armed: boolean; toggle: () => void } {
   const api = usePlaybackArmApi()
 

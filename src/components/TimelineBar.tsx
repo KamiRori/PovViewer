@@ -134,7 +134,7 @@ export function TimelineBar({
             ))}
           </select>
         </label>
-        <span className="preview-hint">仅描边卡片挂载解码器；其余为静态帧</span>
+        <span className="preview-hint">点击卡片参与播放（默认不挂解码器）</span>
       </div>
     </footer>
   )

@@ -46,16 +46,17 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
       }
     case 'setColumns':
       return { ...state, columns: action.columns }
-    case 'metadata':
+    case 'metadata': {
       if (!Number.isFinite(action.duration) || action.duration < 0) return state
-      return {
-        ...state,
-        povs: state.povs.map((pov) =>
-          pov.id === action.id
-            ? { ...pov, duration: action.duration, metadataReady: true }
-            : pov
-        )
-      }
+      let changed = false
+      const povs = state.povs.map((pov) => {
+        if (pov.id !== action.id) return pov
+        if (pov.metadataReady && pov.duration === action.duration) return pov
+        changed = true
+        return { ...pov, duration: action.duration, metadataReady: true }
+      })
+      return changed ? { ...state, povs } : state
+    }
     case 'setOffset': {
       if (!Number.isFinite(action.offset)) return state
       return {

@@ -1,4 +1,11 @@
-import { createContext, useContext, useMemo, useReducer, type ReactNode } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useReducer,
+  type ReactNode
+} from 'react'
 import type { SyncResult } from '../sync/types'
 import type { ColumnCount } from './types'
 import { initialProjectState, projectReducer, type ProjectState } from './reducer'
@@ -19,19 +26,54 @@ const ProjectContext = createContext<ProjectApi | null>(null)
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(projectReducer, initialProjectState)
+
+  const importFiles = useCallback((paths: string[]) => dispatch({ type: 'import', paths }), [])
+  const rename = useCallback(
+    (id: string, playerName: string) => dispatch({ type: 'rename', id, playerName }),
+    []
+  )
+  const remove = useCallback((id: string) => dispatch({ type: 'remove', id }), [])
+  const setColumns = useCallback(
+    (columns: ColumnCount) => dispatch({ type: 'setColumns', columns }),
+    []
+  )
+  const setDuration = useCallback(
+    (id: string, duration: number) => dispatch({ type: 'metadata', id, duration }),
+    []
+  )
+  const setOffset = useCallback(
+    (id: string, offset: number) => dispatch({ type: 'setOffset', id, offset }),
+    []
+  )
+  const applySyncResults = useCallback(
+    (results: SyncResult[]) => dispatch({ type: 'applySync', results }),
+    []
+  )
+  const clearSyncReport = useCallback(() => dispatch({ type: 'clearSyncReport' }), [])
+
   const api = useMemo<ProjectApi>(
     () => ({
       state,
-      importFiles: (paths) => dispatch({ type: 'import', paths }),
-      rename: (id, playerName) => dispatch({ type: 'rename', id, playerName }),
-      remove: (id) => dispatch({ type: 'remove', id }),
-      setColumns: (columns) => dispatch({ type: 'setColumns', columns }),
-      setDuration: (id, duration) => dispatch({ type: 'metadata', id, duration }),
-      setOffset: (id, offset) => dispatch({ type: 'setOffset', id, offset }),
-      applySyncResults: (results) => dispatch({ type: 'applySync', results }),
-      clearSyncReport: () => dispatch({ type: 'clearSyncReport' })
+      importFiles,
+      rename,
+      remove,
+      setColumns,
+      setDuration,
+      setOffset,
+      applySyncResults,
+      clearSyncReport
     }),
-    [state]
+    [
+      state,
+      importFiles,
+      rename,
+      remove,
+      setColumns,
+      setDuration,
+      setOffset,
+      applySyncResults,
+      clearSyncReport
+    ]
   )
 
   return <ProjectContext.Provider value={api}>{children}</ProjectContext.Provider>

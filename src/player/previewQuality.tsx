@@ -46,7 +46,7 @@ interface PreviewQualityApi {
 const PreviewQualityContext = createContext<PreviewQualityApi | null>(null)
 
 export function PreviewQualityProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<PreviewQualitySettings>(PREVIEW_QUALITY_PRESETS.medium)
+  const [settings, setSettings] = useState<PreviewQualitySettings>(PREVIEW_QUALITY_PRESETS.high)
 
   const setPreset = useCallback((preset: PreviewQualityPreset) => {
     setSettings(PREVIEW_QUALITY_PRESETS[preset])

@@ -8,6 +8,7 @@ import {
   type PlaybackRate
 } from '../timeline/playbackMath'
 import { useMasterTimeRef } from '../timeline/store'
+import { enqueueMetadataProbe } from './mediaProbeQueue'
 import { useArmedCount } from './playbackArm'
 import { recordContinuousPlay, recordHardSeek, recordSampleSeek } from './perfCounters'
 import { usePreviewQuality } from './previewQuality'
@@ -155,70 +156,30 @@ function VideoSurfaceImpl({
     }
   }, [attachMedia, src, playing])
 
-  // One-shot metadata + still probe for cards that are not armed yet (timeline duration).
+  // One-shot metadata probe (queued, metadata-only — no seek/still decode on import).
   useEffect(() => {
     if (attachMedia) return
     if (probedSrcRef.current === src) return
-
-    let cancelled = false
-    let painted = false
-    let seekTimer = 0
-    const probe = document.createElement('video')
-    probe.muted = true
-    probe.playsInline = true
-    probe.preload = 'metadata'
-    probe.src = src
-
-    const finish = () => {
-      probe.removeAttribute('src')
-      probe.load()
-    }
-
-    const paintOnce = () => {
-      if (cancelled || painted) return
-      painted = true
-      window.clearTimeout(seekTimer)
-      captureStill(probe, stillRef.current, () => setHasStill(true))
+    if (metadataReady) {
       probedSrcRef.current = src
-      finish()
+      return
     }
 
-    const onMeta = () => {
-      if (cancelled) return
-      const nextDuration = probe.duration
-      if (Number.isFinite(nextDuration)) onDurationRef.current(nextDuration)
-      const expected = Math.max(0, expectedVideoTime(masterTimeRef.current, offsetRef.current))
-      if (expected > 0.05 && Number.isFinite(nextDuration) && expected <= nextDuration) {
-        const onSeeked = () => {
-          probe.removeEventListener('seeked', onSeeked)
-          paintOnce()
-        }
-        probe.addEventListener('seeked', onSeeked)
-        try {
-          probe.currentTime = expected
-        } catch {
-          paintOnce()
-          return
-        }
-        seekTimer = window.setTimeout(paintOnce, 900)
-      } else {
-        paintOnce()
+    const controller = new AbortController()
+    void enqueueMetadataProbe(src, controller.signal).then((result) => {
+      if (controller.signal.aborted) return
+      if (!result) {
+        // Soft failure: leave card pending so a later remount / play can retry.
+        return
       }
-    }
-
-    probe.addEventListener('loadedmetadata', onMeta)
-    probe.addEventListener('error', () => {
-      if (!cancelled) onErrorRef.current()
-      finish()
+      probedSrcRef.current = src
+      onDurationRef.current(result.duration)
     })
 
     return () => {
-      cancelled = true
-      window.clearTimeout(seekTimer)
-      probe.removeEventListener('loadedmetadata', onMeta)
-      finish()
+      controller.abort()
     }
-  }, [attachMedia, src, masterTimeRef])
+  }, [attachMedia, src, metadataReady])
 
   useEffect(() => {
     const video = videoRef.current
