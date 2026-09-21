@@ -250,10 +250,11 @@ POV 文件 → 抽取音频 → 特征 → 互相关 → offset → SyncResult[]
 ## 12. 构建
 
 - 开发：electron-vite 启动主进程和渲染进程。
-- 生产：electron-builder 打出 Windows 安装包或免安装 exe，产品名 `MinecraftPOVViewer`。
-- 用户机器不需要 Node.js、不需要系统里预先安装 FFmpeg。若 Phase 6 需要 FFmpeg，把二进制打进应用，而不是调用用户 PATH 上的不确定版本。
+- 生产：`npm run dist` 用 electron-builder 打出 Windows portable / NSIS，产品名 `MinecraftPOVViewer`。
+- 用户机器不需要 Node.js、不需要系统里预先安装 FFmpeg；`ffmpeg-static` 打进应用（`asarUnpack`）。
+- 缓存目录：开发态为仓库下 `minecraft-pov-viewer/`；portable 在 exe 同级；安装版用 `%APPDATA%` 下的 Electron userData。
 
-Phase 1 不配置安装包，只要求 `dev` 脚本能打开窗口。打包放到 Phase 1 之后、功能冻结前，避免每个阶段都花时间在安装器上。建议在 Phase 5 结束后做第一次可分发构建，Phase 6 再把 FFmpeg 打进去。
+Phase 1 不配置安装包，只要求 `dev` 脚本能打开窗口。功能冻结后用 `npm run dist` 出可分发构建。
 
 ## 13. 测试策略
 

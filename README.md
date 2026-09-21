@@ -19,3 +19,11 @@ npm test
 ```
 
 需要 Node.js 20。
+
+## 打包（Windows）
+
+```text
+npm run dist
+```
+
+产物在 `release/`：免安装 `MinecraftPOVViewer-*-portable.exe`，以及可选 NSIS 安装包。内置 `ffmpeg-static`。用户机器不需要 Node.js。
