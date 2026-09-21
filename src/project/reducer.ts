@@ -28,7 +28,6 @@ export type ProjectAction =
   | { type: 'setOffset'; id: string; offset: number }
   | { type: 'setPlaybackSource'; id: string; playbackSource: PlaybackSource }
   | { type: 'setMuted'; id: string; muted: boolean }
-  | { type: 'soloAudio'; id: string }
   | { type: 'applySync'; results: SyncResult[] }
   | { type: 'clearSyncReport' }
   | { type: 'loadProject'; povs: POVRuntime[]; projectPath: string | null }
@@ -108,14 +107,6 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
         povs: state.povs.map((pov) =>
           pov.id === action.id ? { ...pov, muted: action.muted } : pov
         )
-      }
-    case 'soloAudio':
-      return {
-        ...state,
-        povs: state.povs.map((pov) => ({
-          ...pov,
-          muted: pov.id !== action.id
-        }))
       }
     case 'applySync': {
       const report = applySync(state.povs, action.results)

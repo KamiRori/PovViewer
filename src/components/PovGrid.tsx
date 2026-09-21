@@ -20,7 +20,7 @@ interface PovGridProps {
   onPlaybackSource: (id: string, playbackSource: PlaybackSource) => void
   onRemove: (id: string) => void
   onDuration: (id: string, duration: number) => void
-  onSoloAudio: (id: string) => void
+  onToggleMute: (id: string) => void
   onLocate: (id: string) => void
 }
 
@@ -37,7 +37,7 @@ export function PovGrid({
   onPlaybackSource,
   onRemove,
   onDuration,
-  onSoloAudio,
+  onToggleMute,
   onLocate
 }: PovGridProps) {
   const view = useViewUi()
@@ -82,7 +82,7 @@ export function PovGrid({
             onPlaybackSource={onPlaybackSource}
             onRemove={onRemove}
             onDuration={onDuration}
-            onSoloAudio={onSoloAudio}
+            onToggleMute={onToggleMute}
             onLocate={onLocate}
           />
         </div>
@@ -102,7 +102,7 @@ export function PovGrid({
               onPlaybackSource={onPlaybackSource}
               onRemove={onRemove}
               onDuration={onDuration}
-              onSoloAudio={onSoloAudio}
+              onToggleMute={onToggleMute}
               onLocate={onLocate}
             />
           ))}
@@ -127,7 +127,7 @@ export function PovGrid({
           onPlaybackSource={onPlaybackSource}
           onRemove={onRemove}
           onDuration={onDuration}
-          onSoloAudio={onSoloAudio}
+          onToggleMute={onToggleMute}
           onLocate={onLocate}
         />
       ))}

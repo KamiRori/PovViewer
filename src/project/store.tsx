@@ -21,7 +21,6 @@ interface ProjectApi {
   setOffset: (id: string, offset: number) => void
   setPlaybackSource: (id: string, playbackSource: PlaybackSource) => void
   setMuted: (id: string, muted: boolean) => void
-  soloAudio: (id: string) => void
   applySyncResults: (results: SyncResult[]) => void
   clearSyncReport: () => void
   loadProject: (povs: POVRuntime[], projectPath: string | null) => void
@@ -67,7 +66,6 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     (id: string, muted: boolean) => dispatch({ type: 'setMuted', id, muted }),
     []
   )
-  const soloAudio = useCallback((id: string) => dispatch({ type: 'soloAudio', id }), [])
   const applySyncResults = useCallback(
     (results: SyncResult[]) => dispatch({ type: 'applySync', results }),
     []
@@ -103,7 +101,6 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       setOffset,
       setPlaybackSource,
       setMuted,
-      soloAudio,
       applySyncResults,
       clearSyncReport,
       loadProject,
@@ -122,7 +119,6 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       setOffset,
       setPlaybackSource,
       setMuted,
-      soloAudio,
       applySyncResults,
       clearSyncReport,
       loadProject,

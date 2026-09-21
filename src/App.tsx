@@ -24,7 +24,7 @@ export function App() {
     setDurationsByPath,
     setOffset,
     setPlaybackSource,
-    soloAudio,
+    setMuted,
     applySyncResults,
     clearSyncReport,
     loadProject,
@@ -75,11 +75,9 @@ export function App() {
         event.preventDefault()
         const targetId = view.mode === 'focus' ? view.focusId : view.activeId
         if (!targetId) return
-        if (view.soloId === targetId) view.setSolo(null)
-        else {
-          view.setSolo(targetId)
-          soloAudio(targetId)
-        }
+        const target = state.povs.find((pov) => pov.id === targetId)
+        if (!target) return
+        setMuted(targetId, !target.muted)
         return
       }
 
@@ -97,7 +95,7 @@ export function App() {
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [soloAudio, toggle, view])
+  }, [setMuted, state.povs, toggle, view])
 
   useEffect(() => {
     const block = (event: DragEvent) => {
@@ -204,7 +202,6 @@ export function App() {
       clearArms()
       view.exitFocus()
       view.setActiveId(null)
-      view.setSolo(null)
       resync()
       const missingCount = withMissing.filter((pov) => pov.missing).length
       setHint(
@@ -333,9 +330,14 @@ export function App() {
   function onRemove(id: string): void {
     if (view.focusId === id) view.exitFocus()
     if (view.activeId === id) view.setActiveId(null)
-    if (view.soloId === id) view.setSolo(null)
     forgetArm(id)
     remove(id)
+  }
+
+  function onToggleMute(id: string): void {
+    const pov = state.povs.find((entry) => entry.id === id)
+    if (!pov) return
+    setMuted(id, !pov.muted)
   }
 
   const unmatched =
@@ -432,7 +434,7 @@ export function App() {
             onPlaybackSource={onPlaybackSourceChange}
             onRemove={onRemove}
             onDuration={setDuration}
-            onSoloAudio={soloAudio}
+            onToggleMute={onToggleMute}
             onLocate={(id) => {
               void onLocateFile(id)
             }}
@@ -440,6 +442,7 @@ export function App() {
         )}
       </main>
       <TimelineBar
+        povs={visible}
         masterTime={playback.state.masterTime}
         range={playback.range}
         playing={playback.state.playing}

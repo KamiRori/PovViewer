@@ -174,6 +174,14 @@ export function useArmedCount(): number {
   return api.getArmedCount()
 }
 
+/** Subscribe to arm changes; returns a stable lookup for whether a POV is participating. */
+export function useArmedLookup(): (id: string) => boolean {
+  const api = usePlaybackArmApi()
+  const version = useSyncExternalStore(api.subscribe, api.getSnapshot, api.getSnapshot)
+  void version
+  return api.isArmed
+}
+
 export function usePlaybackArmActions(): Pick<PlaybackArmApi, 'forget' | 'clearAll'> {
   const api = usePlaybackArmApi()
   return useMemo(() => ({ forget: api.forget, clearAll: api.clearAll }), [api])

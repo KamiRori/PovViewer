@@ -33,7 +33,7 @@ interface PovCardProps {
   onPlaybackSource: (id: string, playbackSource: PlaybackSource) => void
   onRemove: (id: string) => void
   onDuration: (id: string, duration: number) => void
-  onSoloAudio: (id: string) => void
+  onToggleMute: (id: string) => void
   onLocate: (id: string) => void
 }
 
@@ -62,7 +62,7 @@ export function PovCard({
   onPlaybackSource,
   onRemove,
   onDuration,
-  onSoloAudio,
+  onToggleMute,
   onLocate
 }: PovCardProps) {
   const view = useViewUi()
@@ -80,12 +80,7 @@ export function PovCard({
   const status = povPlaybackStatus(masterTime, pov.offset, pov.duration, pov.metadataReady)
   const videoTime = expectedVideoTime(masterTime, pov.offset)
   const effectiveArmed = variant === 'focus-main' || variant === 'focus-rail' ? true : armed
-  const muted = shouldMutePov({
-    mode: view.mode,
-    povId: pov.id,
-    focusId: view.focusId,
-    soloId: view.soloId
-  })
+  const muted = shouldMutePov({ muted: pov.muted })
 
   useEffect(() => {
     setDraft(pov.playerName)
@@ -227,14 +222,7 @@ export function PovCard({
 
     window.clearTimeout(clickTimerRef.current)
     clickTimerRef.current = window.setTimeout(() => {
-      // Highlight + join in one click; click again on the same card to leave.
-      if (view.activeId === pov.id && armed) {
-        setArmed(false)
-        view.setActiveId(null)
-        return
-      }
-      view.setActiveId(pov.id)
-      setArmed(true)
+      view.setActiveId(view.activeId === pov.id ? null : pov.id)
     }, CLICK_DELAY_MS)
   }
 
@@ -261,13 +249,7 @@ export function PovCard({
       if (target && target !== event.currentTarget) return
       event.preventDefault()
       event.stopPropagation()
-      if (view.activeId === pov.id && armed) {
-        setArmed(false)
-        view.setActiveId(null)
-        return
-      }
-      view.setActiveId(pov.id)
-      setArmed(true)
+      view.setActiveId(view.activeId === pov.id ? null : pov.id)
     }
   }
 
@@ -299,8 +281,8 @@ export function PovCard({
       data-armed={effectiveArmed ? 'true' : 'false'}
       data-highlighted={view.activeId === pov.id ? 'true' : 'false'}
       role="button"
-      aria-pressed={effectiveArmed}
-      title="单击高亮并参与 · 再点取消 · 双击进入焦点"
+      aria-pressed={view.activeId === pov.id}
+      title="单击选中 · 双击进入焦点"
       tabIndex={0}
       onClick={onCardClick}
       onDoubleClick={onCardDoubleClick}
@@ -436,23 +418,28 @@ export function PovCard({
         </label>
       </div>
       <div className="pov-actions">
+        {variant !== 'focus-rail' ? (
+          <button
+            type="button"
+            className={armed ? 'display is-on' : 'display'}
+            title={armed ? '取消展示（不参与解码播放）' : '展示此卡（参与解码播放）'}
+            aria-pressed={armed}
+            onClick={() => {
+              view.setActiveId(pov.id)
+              setArmed(!armed)
+            }}
+          >
+            {armed ? '展示中' : '未展示'}
+          </button>
+        ) : null}
         <button
           type="button"
           className={!muted ? 'audio is-on' : 'audio'}
-          title={!muted ? '正在出声' : '设为唯一出声'}
+          title={!muted ? '正在出声（可多路同时开）' : '开启声音'}
           aria-pressed={!muted}
           onClick={() => {
             view.setActiveId(pov.id)
-            if (view.mode === 'focus') {
-              view.enterFocus(pov.id)
-              return
-            }
-            if (view.soloId === pov.id) {
-              view.setSolo(null)
-            } else {
-              view.setSolo(pov.id)
-              onSoloAudio(pov.id)
-            }
+            onToggleMute(pov.id)
           }}
         >
           {!muted ? '🔊' : '🔇'}
