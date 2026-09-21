@@ -1,3 +1,11 @@
+export interface ProxyStatusDto {
+  kind: 'preview'
+  status: 'ready' | 'pending' | 'error' | 'missing'
+  sourcePath: string
+  proxyPath: string | null
+  error?: string
+}
+
 export interface FeaturePerfReport {
   ts: number
   playbackMode: 'continuous' | 'sampled'
@@ -47,7 +55,14 @@ export interface PosterDto {
 export interface PovApi {
   selectVideoFiles: () => Promise<string[]>
   selectJsonFile: (title: string) => Promise<string | null>
+  saveJsonFile: (defaultName: string) => Promise<string | null>
   readTextFile: (filePath: string) => Promise<string>
+  writeTextFile: (filePath: string, text: string) => Promise<boolean>
+  pathExists: (filePath: string) => Promise<boolean>
+  selectReplacementFile: (currentPath: string) => Promise<string | null>
+  ensurePreviewProxy: (filePath: string) => Promise<ProxyStatusDto>
+  getPreviewProxyStatus: (filePath: string) => Promise<ProxyStatusDto | null>
+  ensurePreviewProxies: (paths: string[]) => Promise<ProxyStatusDto[]>
   toMediaUrl: (filePath: string) => Promise<string>
   probeMediaDurations: (paths: string[]) => Promise<MediaDurationDto[]>
   ensurePoster: (filePath: string, atSeconds?: number) => Promise<PosterDto>

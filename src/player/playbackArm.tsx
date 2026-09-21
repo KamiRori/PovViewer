@@ -14,7 +14,11 @@ interface PlaybackArmApi {
   toggle: (id: string) => void
   setArmed: (id: string, armed: boolean) => void
   ensure: (id: string, defaultArmed?: boolean) => void
-  remove: (id: string) => void
+  /** Unmount only — keeps armed so Focus↔Grid remounts preserve participation. */
+  releaseMount: (id: string) => void
+  /** Permanent delete (user removed the POV). */
+  forget: (id: string) => void
+  clearAll: () => void
   getArmedCount: () => number
   subscribe: (onStoreChange: () => void) => () => void
   getSnapshot: () => number
@@ -24,7 +28,7 @@ const PlaybackArmContext = createContext<PlaybackArmApi | null>(null)
 
 export function PlaybackArmProvider({ children }: { children: ReactNode }) {
   const armedRef = useRef(new Set<string>())
-  const knownRef = useRef(new Set<string>())
+  const mountedRef = useRef(new Set<string>())
   const versionRef = useRef(0)
   const listenersRef = useRef(new Set<() => void>())
 
@@ -37,7 +41,6 @@ export function PlaybackArmProvider({ children }: { children: ReactNode }) {
 
   const setArmed = useCallback(
     (id: string, armed: boolean) => {
-      knownRef.current.add(id)
       const has = armedRef.current.has(id)
       if (armed && !has) {
         armedRef.current.add(id)
@@ -57,21 +60,42 @@ export function PlaybackArmProvider({ children }: { children: ReactNode }) {
     [setArmed]
   )
 
-  /** First card stays idle too — user explicitly arms cards for decode. */
-  const ensure = useCallback((id: string, defaultArmed = false) => {
-    if (knownRef.current.has(id)) return
-    knownRef.current.add(id)
-    if (defaultArmed) armedRef.current.add(id)
-    emit()
-  }, [emit])
+  /** Cards start idle unless explicitly defaultArmed — avoids import-time decoder storm. */
+  const ensure = useCallback(
+    (id: string, defaultArmed = false) => {
+      const wasMounted = mountedRef.current.has(id)
+      mountedRef.current.add(id)
+      if (wasMounted) return
 
-  const remove = useCallback(
+      // Remount after Focus/Grid switch: keep prior armed state.
+      if (armedRef.current.has(id)) {
+        emit()
+        return
+      }
+
+      if (defaultArmed) armedRef.current.add(id)
+      emit()
+    },
+    [emit]
+  )
+
+  const releaseMount = useCallback((id: string) => {
+    mountedRef.current.delete(id)
+  }, [])
+
+  const forget = useCallback(
     (id: string) => {
-      knownRef.current.delete(id)
+      mountedRef.current.delete(id)
       if (armedRef.current.delete(id)) emit()
     },
     [emit]
   )
+
+  const clearAll = useCallback(() => {
+    armedRef.current.clear()
+    mountedRef.current.clear()
+    emit()
+  }, [emit])
 
   const getArmedCount = useCallback(() => armedRef.current.size, [])
 
@@ -90,12 +114,25 @@ export function PlaybackArmProvider({ children }: { children: ReactNode }) {
       toggle,
       setArmed,
       ensure,
-      remove,
+      releaseMount,
+      forget,
+      clearAll,
       getArmedCount,
       subscribe,
       getSnapshot
     }),
-    [isArmed, toggle, setArmed, ensure, remove, getArmedCount, subscribe, getSnapshot]
+    [
+      isArmed,
+      toggle,
+      setArmed,
+      ensure,
+      releaseMount,
+      forget,
+      clearAll,
+      getArmedCount,
+      subscribe,
+      getSnapshot
+    ]
   )
 
   return <PlaybackArmContext.Provider value={api}>{children}</PlaybackArmContext.Provider>
@@ -107,13 +144,17 @@ function usePlaybackArmApi(): PlaybackArmApi {
   return api
 }
 
-/** Subscribe to arm changes for one POV. Cards start idle (no decoder). */
-export function usePlaybackArm(id: string): { armed: boolean; toggle: () => void } {
+/** Subscribe to arm changes for one POV. Participation survives Focus↔Grid remounts. */
+export function usePlaybackArm(id: string): {
+  armed: boolean
+  toggle: () => void
+  setArmed: (armed: boolean) => void
+} {
   const api = usePlaybackArmApi()
 
   useEffect(() => {
     api.ensure(id)
-    return () => api.remove(id)
+    return () => api.releaseMount(id)
   }, [api, id])
 
   const version = useSyncExternalStore(api.subscribe, api.getSnapshot, api.getSnapshot)
@@ -121,7 +162,8 @@ export function usePlaybackArm(id: string): { armed: boolean; toggle: () => void
 
   return {
     armed: api.isArmed(id),
-    toggle: () => api.toggle(id)
+    toggle: () => api.toggle(id),
+    setArmed: (armed: boolean) => api.setArmed(id, armed)
   }
 }
 
@@ -130,4 +172,9 @@ export function useArmedCount(): number {
   const version = useSyncExternalStore(api.subscribe, api.getSnapshot, api.getSnapshot)
   void version
   return api.getArmedCount()
+}
+
+export function usePlaybackArmActions(): Pick<PlaybackArmApi, 'forget' | 'clearAll'> {
+  const api = usePlaybackArmApi()
+  return useMemo(() => ({ forget: api.forget, clearAll: api.clearAll }), [api])
 }

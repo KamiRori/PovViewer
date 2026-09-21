@@ -1,12 +1,19 @@
 export const IpcChannel = {
   selectVideoFiles: 'dialog:selectVideoFiles',
   selectJsonFile: 'dialog:selectJsonFile',
+  saveJsonFile: 'dialog:saveJsonFile',
   registerPaths: 'media:registerPaths',
   toMediaUrl: 'media:toUrl',
   probeMediaDurations: 'media:probeDurations',
   ensurePoster: 'media:ensurePoster',
   readTextFile: 'fs:readTextFile',
+  writeTextFile: 'fs:writeTextFile',
+  pathExists: 'fs:pathExists',
+  selectReplacementFile: 'dialog:selectReplacementFile',
   openGpuDebug: 'debug:openGpuWindow',
   reportFeaturePerf: 'debug:reportFeaturePerf',
-  getDebugSnapshot: 'debug:getSnapshot'
+  getDebugSnapshot: 'debug:getSnapshot',
+  ensurePreviewProxy: 'proxy:ensurePreview',
+  getPreviewProxyStatus: 'proxy:getStatus',
+  ensurePreviewProxies: 'proxy:ensureMany'
 } as const

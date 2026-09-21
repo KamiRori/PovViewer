@@ -8,7 +8,7 @@
 ┌──────────────────────────────────────────────┐
 │ Electron 主进程                               │
 │ 窗口、对话框、文件系统、自定义媒体协议          │
-│ 以后：FFmpeg 代理调度（Phase 6）               │
+│ FFmpeg 预览代理调度（Phase 6）                 │
 └────────────────────┬─────────────────────────┘
                      │ contextBridge（白名单 IPC）
 ┌────────────────────▼─────────────────────────┐
@@ -197,6 +197,9 @@ Phase 1 只实现前两项。其余在对应 Phase 再挂上，避免渲染进�
 | `writeTextFile(filePath, text)` | 5 | 写项目 |
 | `pathExists(filePath)` | 5 | 判断源文件是否还在 |
 | `selectReplacementFile()` | 5 | Locate File |
+| `ensurePreviewProxy(filePath)` | 6 | 生成或复用网格预览代理（缓存目录） |
+| `getPreviewProxyStatus(filePath)` | 6 | 查询内存中的代理状态 |
+| `ensurePreviewProxies(paths)` | 6 | 批量排队生成预览代理 |
 
 路径一律由主进程规范化。渲染进程只保存字符串和协议 URL。
 
@@ -238,7 +241,7 @@ POV 文件 → 抽取音频 → 特征 → 互相关 → offset → SyncResult[]
 | 情况 | 界面 |
 | --- | --- |
 | 元数据读取失败 | 卡片写明无法读取，保留在列表中，可移除 |
-| 容器或编码不能直接播 | 占位说明，Phase 6 前不偷偷转码 |
+| 容器或编码不能直接播 | Phase 6：尝试预览代理；仍失败则占位说明 |
 | `sync.json` 版本不是 1 或结构不符 | 不改现有 offset，提示文件无效 |
 | 同步名匹配不上 | 列出未匹配名字，已匹配的仍然写入 |
 | 项目路径不存在 | `Missing File` + 文件名 + Locate File |

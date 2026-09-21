@@ -2,6 +2,7 @@ import { StrictMode, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
 import { PlaybackArmProvider } from './player/playbackArm'
+import { DecodeBudgetProvider } from './player/decodeBudget'
 import { PlayerSettingsProviders } from './player/PlayerSettingsProviders'
 
 import { ProjectProvider, useProject } from './project/store'
@@ -21,9 +22,11 @@ createRoot(root).render(
     <ProjectProvider>
       <PlaybackBridge>
         <PlaybackArmProvider>
-          <PlayerSettingsProviders>
-            <App />
-          </PlayerSettingsProviders>
+          <DecodeBudgetProvider>
+            <PlayerSettingsProviders>
+              <App />
+            </PlayerSettingsProviders>
+          </DecodeBudgetProvider>
         </PlaybackArmProvider>
       </PlaybackBridge>
     </ProjectProvider>

@@ -1,4 +1,9 @@
 import { useArmedCount } from '../player/playbackArm'
+import {
+  LIVE_DECODER_OPTIONS,
+  useDecodeBudget,
+  useLiveDecodeStats
+} from '../player/decodeBudget'
 import { type PreviewQualityPreset, usePreviewQuality } from '../player/previewQuality'
 import { PLAYBACK_RATES, type PlaybackRate } from '../timeline/playbackMath'
 import { formatMasterTime } from '../timeline/timeFormat'
@@ -34,6 +39,8 @@ export function TimelineBar({
   const span = Math.max(range.duration, 0.001)
   const preview = usePreviewQuality()
   const armedCount = useArmedCount()
+  const budget = useDecodeBudget()
+  const liveStats = useLiveDecodeStats()
 
   return (
     <footer className="timeline-bar">
@@ -102,44 +109,42 @@ export function TimelineBar({
       <div className="preview-settings">
         <label
           className="speed"
-          title="中/低为采样预览：仅已选中的卡片按主时钟低频 seek。高为连续播放。点击卡片切换是否参与播放。"
+          title="均为连续播放。低画质放宽同步校正。单击卡片切换是否参与（挂载解码器）；双击进入 Focus。"
         >
           预览画质
           <select
             value={preview.settings.preset}
             onChange={(event) => preview.setPreset(event.target.value as PreviewQualityPreset)}
           >
-            <option value="high">高（连续播放）</option>
-            <option value="medium">中（采样预览）</option>
-            <option value="low">低（更稀采样）</option>
+            <option value="high">高（紧密同步）</option>
+            <option value="medium">中（较少校正）</option>
+            <option value="low">低（最少校正）</option>
           </select>
         </label>
-        <span className="decode-stats" title="点击视角卡片可切换是否参与播放；描边表示已选中">
-          参与播放 {armedCount}
-        </span>
         <label
           className="speed"
-          title="采样模式下每秒向主时钟对齐的次数。越低越省 GPU，画面越跳。"
+          title="播放时同时保持连续解码的上限。超出预算的参与卡片显示静止帧并排队。"
         >
-          采样帧率
+          同时解码
           <select
-            value={preview.settings.maxFps}
-            disabled={preview.settings.playbackMode !== 'sampled'}
-            onChange={(event) => preview.setMaxFps(Number(event.target.value))}
+            value={budget.maxLive}
+            onChange={(event) => budget.setMaxLive(Number(event.target.value))}
           >
-            {uniqueSorted([3, 5, 8, 10, 12, 15, preview.settings.maxFps]).map((fps) => (
-              <option key={fps} value={fps}>
-                {fps}fps
+            {LIVE_DECODER_OPTIONS.map((option) => (
+              <option key={option} value={option}>
+                {option} 路
               </option>
             ))}
           </select>
         </label>
-        <span className="preview-hint">点击卡片参与播放（默认不挂解码器）</span>
+        <span
+          className="decode-stats"
+          title="解码 = 当前占用的连续解码槽；参与 = 已点选加入播放的卡片数"
+        >
+          解码 {liveStats.live}/{liveStats.max} · 参与 {armedCount}
+        </span>
+        <span className="preview-hint">单击高亮并参与 · 双击 Focus</span>
       </div>
     </footer>
   )
-}
-
-function uniqueSorted(values: number[]): number[] {
-  return [...new Set(values)].sort((a, b) => a - b)
 }

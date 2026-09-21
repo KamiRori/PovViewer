@@ -9,6 +9,7 @@ import {
 } from '../timeline/playbackMath'
 import { useMasterTimeRef } from '../timeline/store'
 import { useArmedCount } from './playbackArm'
+import { useDecodeLive } from './decodeBudget'
 import { recordContinuousPlay, recordHardSeek, recordSampleSeek } from './perfCounters'
 import { usePreviewQuality } from './previewQuality'
 import {
@@ -36,7 +37,11 @@ interface VideoSurfaceProps {
   seekGeneration: number
   /** When false, release the decoder and show a still frame only. */
   armed: boolean
-  /** Low-res JPEG from main process for idle grid cards. */
+  /** Effective output mute for this surface. */
+  muted: boolean
+  /** Layout role — focus-main stays high priority; focus-rail follows with continuous preview. */
+  variant?: 'grid' | 'focus-main' | 'focus-rail'
+  /** Low-res JPEG/data-URL for idle grid cards (avoids black frames). */
   posterUrl?: string | null
   onDuration: (duration: number) => void
   onError: () => void
@@ -52,6 +57,8 @@ function VideoSurfaceImpl({
   playbackRate,
   seekGeneration,
   armed,
+  muted,
+  variant = 'grid',
   posterUrl = null,
   onDuration,
   onError
@@ -65,8 +72,6 @@ function VideoSurfaceImpl({
   const [visible, setVisible] = useState(true)
   const [hasStill, setHasStill] = useState(false)
   const [mediaReady, setMediaReady] = useState(false)
-  /** Briefly re-attach while paused so nudge / scrub-commit can refresh the still frame. */
-  const [pausedSeekAttach, setPausedSeekAttach] = useState(false)
   const offsetRef = useRef(offset)
   const durationRef = useRef(duration)
   const metadataReadyRef = useRef(metadataReady)
@@ -82,7 +87,6 @@ function VideoSurfaceImpl({
   const playRequestRef = useRef<Promise<void> | null>(null)
   const liveRef = useRef(false)
   const probedSrcRef = useRef<string | null>(null)
-  const lastSeekGenerationRef = useRef(seekGeneration)
   offsetRef.current = offset
   durationRef.current = duration
   metadataReadyRef.current = metadataReady
@@ -93,13 +97,20 @@ function VideoSurfaceImpl({
   armedRef.current = armed
 
   const sampled = settings.playbackMode === 'sampled'
-  /**
-   * Armed + visible cards keep a decoder so scrubbing/paused grid still shows a frame
-   * (Focus-like). Unarmed cards stay on the JPEG poster only — that keeps idle CPU down.
-   */
-  const attachMedia = armed && visible
-  const live = attachMedia && !sampled && playing
+  /** Focus surfaces keep a decoder; grid uses the user 「参与」 toggle. */
+  const forceAttach = variant === 'focus-main' || variant === 'focus-rail'
+  const wantsSlot = visible && (armed || forceAttach) && playing
+  const slotPriority =
+    variant === 'focus-main' ? 20_000 : variant === 'focus-rail' ? 300 : 1_000 + (visible ? 500 : 0)
+  const liveSlot = useDecodeLive(povId, wantsSlot, slotPriority)
+  // While playing, only budget winners keep a decoder. When paused, armed cards may attach for scrub.
+  const attachMedia =
+    visible &&
+    (armed || forceAttach) &&
+    (variant === 'focus-main' || !playing || liveSlot)
+  const live = attachMedia && !sampled && playing && (variant === 'focus-main' || liveSlot)
   liveRef.current = live
+  const sampleFps = settings.maxFps
 
   useEffect(() => {
     const host = hostRef.current
@@ -114,25 +125,6 @@ function VideoSurfaceImpl({
     observer.observe(host)
     return () => observer.disconnect()
   }, [])
-
-  // Pause → drop decoder immediately. Paused seeks briefly re-attach, then drop again.
-  useEffect(() => {
-    if (playing) {
-      setPausedSeekAttach(false)
-      lastSeekGenerationRef.current = seekGeneration
-      return
-    }
-    if (!armed || !visible) {
-      setPausedSeekAttach(false)
-      lastSeekGenerationRef.current = seekGeneration
-      return
-    }
-    if (seekGeneration === lastSeekGenerationRef.current) return
-    lastSeekGenerationRef.current = seekGeneration
-    setPausedSeekAttach(true)
-    const timer = window.setTimeout(() => setPausedSeekAttach(false), 2000)
-    return () => window.clearTimeout(timer)
-  }, [playing, armed, visible, seekGeneration])
 
   // Attach / release the media element. Idle cards must not keep HW decoders warm.
   useEffect(() => {
@@ -154,16 +146,73 @@ function VideoSurfaceImpl({
       video.preload = 'auto'
       video.load()
       setMediaReady(false)
-      setHasStill(false)
     }
-  }, [attachMedia, src, playing])
+  }, [attachMedia, src])
 
-  // Duration comes from main-process probe on import (mp4 moov / ffmpeg).
-  // Do not open Chromium demuxers here — that fights disk IO on multi‑GB POV files
-  // and is why cards stayed on 读取中. Playing still reports duration via onLoadedMetadata.
+  // One-shot metadata + still probe for cards that are not armed yet (timeline duration).
   useEffect(() => {
-    if (metadataReady) probedSrcRef.current = src
-  }, [metadataReady, src])
+    if (attachMedia) return
+    if (probedSrcRef.current === src) return
+
+    let cancelled = false
+    let painted = false
+    let seekTimer = 0
+    const probe = document.createElement('video')
+    probe.muted = true
+    probe.playsInline = true
+    probe.preload = 'metadata'
+    probe.src = src
+
+    const finish = () => {
+      probe.removeAttribute('src')
+      probe.load()
+    }
+
+    const paintOnce = () => {
+      if (cancelled || painted) return
+      painted = true
+      window.clearTimeout(seekTimer)
+      captureStill(probe, stillRef.current, () => setHasStill(true))
+      probedSrcRef.current = src
+      finish()
+    }
+
+    const onMeta = () => {
+      if (cancelled) return
+      const nextDuration = probe.duration
+      if (Number.isFinite(nextDuration)) onDurationRef.current(nextDuration)
+      const expected = Math.max(0, expectedVideoTime(masterTimeRef.current, offsetRef.current))
+      if (expected > 0.05 && Number.isFinite(nextDuration) && expected <= nextDuration) {
+        const onSeeked = () => {
+          probe.removeEventListener('seeked', onSeeked)
+          paintOnce()
+        }
+        probe.addEventListener('seeked', onSeeked)
+        try {
+          probe.currentTime = expected
+        } catch {
+          paintOnce()
+          return
+        }
+        seekTimer = window.setTimeout(paintOnce, 900)
+      } else {
+        paintOnce()
+      }
+    }
+
+    probe.addEventListener('loadedmetadata', onMeta)
+    probe.addEventListener('error', () => {
+      if (!cancelled) onErrorRef.current()
+      finish()
+    })
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(seekTimer)
+      probe.removeEventListener('loadedmetadata', onMeta)
+      finish()
+    }
+  }, [attachMedia, src, masterTimeRef])
 
   useEffect(() => {
     const video = videoRef.current
@@ -186,16 +235,11 @@ function VideoSurfaceImpl({
     video.pause()
     video.playbackRate = baseRateRef.current
     void seekAndVerify(video, expected, seekingRef, seekTokenRef, hardSeekCooldownUntilRef).then((ok) => {
-      if (!ok || !armedRef.current) {
-        if (!playingRef.current) setPausedSeekAttach(false)
-        return
-      }
+      if (!ok || !armedRef.current) return
       video.playbackRate = baseRateRef.current
       softSyncSuppressUntilRef.current = performance.now() + SOFT_SYNC_SUPPRESS_MS
       captureStill(video, stillRef.current, () => setHasStill(true))
       if (!sampled && playingRef.current && liveRef.current) requestPlay(video, playRequestRef)
-      // Paused seek only needed the still — drop the decoder again.
-      if (!playingRef.current) setPausedSeekAttach(false)
     })
   }, [seekGeneration, attachMedia, mediaReady, masterTimeRef, sampled])
 
@@ -219,7 +263,7 @@ function VideoSurfaceImpl({
     let closed = false
     let timer = 0
     let safetyTimer = 0
-    const interval = 1000 / Math.max(3, settings.maxFps)
+    const interval = 1000 / Math.max(3, sampleFps)
     const stagger = Math.abs(hashString(povId)) % Math.max(1, Math.floor(interval))
 
     const schedule = (delay: number) => {
@@ -298,7 +342,7 @@ function VideoSurfaceImpl({
       releaseSampleSeek(povId)
       video.pause()
     }
-  }, [sampled, settings.maxFps, playing, attachMedia, mediaReady, masterTimeRef, povId])
+  }, [sampled, sampleFps, playing, attachMedia, mediaReady, masterTimeRef, povId])
 
   useEffect(() => {
     if (sampled || !attachMedia) return
@@ -327,7 +371,8 @@ function VideoSurfaceImpl({
 
     let frame = 0
     let lastSoftCheck = 0
-    const hardThreshold = hardSeekThresholdSeconds(armedCount)
+    const hardThreshold =
+      hardSeekThresholdSeconds(armedCount) * Math.max(1, settings.hardSeekSlack)
     const tick = (stamp: number) => {
       const nextStatus = povPlaybackStatus(
         masterTimeRef.current,
@@ -372,7 +417,7 @@ function VideoSurfaceImpl({
         } else if (stamp - lastSoftCheck > 300) {
           lastSoftCheck = stamp
           const action = syncAction(video.currentTime, expected)
-          const softAllowed = now >= softSyncSuppressUntilRef.current
+          const softAllowed = settings.softSync && now >= softSyncSuppressUntilRef.current
           if (softAllowed && action === 'soft') {
             video.playbackRate = softPlaybackRate(baseRateRef.current, video.currentTime, expected)
           } else if (video.playbackRate !== baseRateRef.current) {
@@ -394,7 +439,7 @@ function VideoSurfaceImpl({
       video.pause()
       playRequestRef.current = null
     }
-  }, [sampled, playing, live, attachMedia, mediaReady, masterTimeRef, armedCount, povId])
+  }, [sampled, playing, live, attachMedia, mediaReady, masterTimeRef, armedCount, povId, settings.hardSeekSlack, settings.softSync])
 
   return (
     <div ref={hostRef} className="video-host">
@@ -405,7 +450,7 @@ function VideoSurfaceImpl({
             ? 'video-surface'
             : 'video-surface video-surface-detached'
         }
-        muted
+        muted={muted}
         playsInline
         preload="none"
         tabIndex={-1}
@@ -422,7 +467,6 @@ function VideoSurfaceImpl({
         }}
         onError={() => onErrorRef.current()}
       />
-      {/* Poster stays visible until a live frame exists — prevents black grid/arming flash. */}
       {posterUrl && (!attachMedia || !mediaReady) ? (
         <img className="video-still video-poster" src={posterUrl} alt="" draggable={false} />
       ) : null}
@@ -433,13 +477,13 @@ function VideoSurfaceImpl({
         }${hasStill ? '' : ' is-empty'}`}
         aria-hidden={attachMedia || Boolean(posterUrl)}
       />
-      {!attachMedia ? (
+      {!attachMedia && armed && playing ? <p className="decode-badge">排队解码</p> : null}
+      {!attachMedia && !armed ? (
         <p className="decode-badge">{posterUrl ? '预览帧' : '等待预览…'}</p>
-      ) : !mediaReady ? (
-        <p className="decode-badge">加载画面…</p>
       ) : null}
+      {attachMedia && !mediaReady ? <p className="decode-badge">加载画面…</p> : null}
       {sampled && attachMedia && playing ? (
-        <p className="decode-badge decode-badge-quality">{settings.maxFps}fps 采样</p>
+        <p className="decode-badge decode-badge-quality">{sampleFps}fps 采样</p>
       ) : null}
     </div>
   )
@@ -590,6 +634,8 @@ export const VideoSurface = memo(VideoSurfaceImpl, (prev, next) => {
     prev.playbackRate === next.playbackRate &&
     prev.seekGeneration === next.seekGeneration &&
     prev.armed === next.armed &&
+    prev.muted === next.muted &&
+    prev.variant === next.variant &&
     prev.posterUrl === next.posterUrl
   )
 })

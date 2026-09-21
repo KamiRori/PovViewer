@@ -7,7 +7,7 @@ import {
   type ReactNode
 } from 'react'
 import type { SyncResult } from '../sync/types'
-import type { ColumnCount } from './types'
+import type { ColumnCount, POVRuntime } from './types'
 import { initialProjectState, projectReducer, type ProjectState } from './reducer'
 
 interface ProjectApi {
@@ -19,8 +19,14 @@ interface ProjectApi {
   setDuration: (id: string, duration: number) => void
   setDurationsByPath: (entries: Array<{ filePath: string; duration: number }>) => void
   setOffset: (id: string, offset: number) => void
+  setMuted: (id: string, muted: boolean) => void
+  soloAudio: (id: string) => void
   applySyncResults: (results: SyncResult[]) => void
   clearSyncReport: () => void
+  loadProject: (povs: POVRuntime[], projectPath: string | null) => void
+  setProjectPath: (projectPath: string | null) => void
+  setMissing: (id: string, missing: boolean) => void
+  relocate: (id: string, filePath: string) => void
 }
 
 const ProjectContext = createContext<ProjectApi | null>(null)
@@ -51,11 +57,33 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     (id: string, offset: number) => dispatch({ type: 'setOffset', id, offset }),
     []
   )
+  const setMuted = useCallback(
+    (id: string, muted: boolean) => dispatch({ type: 'setMuted', id, muted }),
+    []
+  )
+  const soloAudio = useCallback((id: string) => dispatch({ type: 'soloAudio', id }), [])
   const applySyncResults = useCallback(
     (results: SyncResult[]) => dispatch({ type: 'applySync', results }),
     []
   )
   const clearSyncReport = useCallback(() => dispatch({ type: 'clearSyncReport' }), [])
+  const loadProject = useCallback(
+    (povs: POVRuntime[], projectPath: string | null) =>
+      dispatch({ type: 'loadProject', povs, projectPath }),
+    []
+  )
+  const setProjectPath = useCallback(
+    (projectPath: string | null) => dispatch({ type: 'setProjectPath', projectPath }),
+    []
+  )
+  const setMissing = useCallback(
+    (id: string, missing: boolean) => dispatch({ type: 'setMissing', id, missing }),
+    []
+  )
+  const relocate = useCallback(
+    (id: string, filePath: string) => dispatch({ type: 'relocate', id, filePath }),
+    []
+  )
 
   const api = useMemo<ProjectApi>(
     () => ({
@@ -67,8 +95,14 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       setDuration,
       setDurationsByPath,
       setOffset,
+      setMuted,
+      soloAudio,
       applySyncResults,
-      clearSyncReport
+      clearSyncReport,
+      loadProject,
+      setProjectPath,
+      setMissing,
+      relocate
     }),
     [
       state,
@@ -79,8 +113,14 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       setDuration,
       setDurationsByPath,
       setOffset,
+      setMuted,
+      soloAudio,
       applySyncResults,
-      clearSyncReport
+      clearSyncReport,
+      loadProject,
+      setProjectPath,
+      setMissing,
+      relocate
     ]
   )
 

@@ -8,12 +8,14 @@ export interface ProjectState {
   povs: POVRuntime[]
   columns: ColumnCount
   lastSyncUnmatched: string[]
+  projectPath: string | null
 }
 
 export const initialProjectState: ProjectState = {
   povs: [],
   columns: 4,
-  lastSyncUnmatched: []
+  lastSyncUnmatched: [],
+  projectPath: null
 }
 
 export type ProjectAction =
@@ -24,8 +26,14 @@ export type ProjectAction =
   | { type: 'metadata'; id: string; duration: number }
   | { type: 'metadataByPath'; entries: Array<{ filePath: string; duration: number }> }
   | { type: 'setOffset'; id: string; offset: number }
+  | { type: 'setMuted'; id: string; muted: boolean }
+  | { type: 'soloAudio'; id: string }
   | { type: 'applySync'; results: SyncResult[] }
   | { type: 'clearSyncReport' }
+  | { type: 'loadProject'; povs: POVRuntime[]; projectPath: string | null }
+  | { type: 'setProjectPath'; projectPath: string | null }
+  | { type: 'setMissing'; id: string; missing: boolean }
+  | { type: 'relocate'; id: string; filePath: string }
 
 export function projectReducer(state: ProjectState, action: ProjectAction): ProjectState {
   switch (action.type) {
@@ -86,6 +94,21 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
         )
       }
     }
+    case 'setMuted':
+      return {
+        ...state,
+        povs: state.povs.map((pov) =>
+          pov.id === action.id ? { ...pov, muted: action.muted } : pov
+        )
+      }
+    case 'soloAudio':
+      return {
+        ...state,
+        povs: state.povs.map((pov) => ({
+          ...pov,
+          muted: pov.id !== action.id
+        }))
+      }
     case 'applySync': {
       const report = applySync(state.povs, action.results)
       return {
@@ -98,6 +121,37 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
       return state.lastSyncUnmatched.length === 0
         ? state
         : { ...state, lastSyncUnmatched: [] }
+    case 'loadProject':
+      return {
+        ...state,
+        povs: action.povs,
+        projectPath: action.projectPath,
+        lastSyncUnmatched: []
+      }
+    case 'setProjectPath':
+      return { ...state, projectPath: action.projectPath }
+    case 'setMissing':
+      return {
+        ...state,
+        povs: state.povs.map((pov) =>
+          pov.id === action.id ? { ...pov, missing: action.missing } : pov
+        )
+      }
+    case 'relocate':
+      return {
+        ...state,
+        povs: state.povs.map((pov) =>
+          pov.id === action.id
+            ? {
+                ...pov,
+                filePath: action.filePath,
+                missing: false,
+                duration: 0,
+                metadataReady: false
+              }
+            : pov
+        )
+      }
     default:
       return state
   }
