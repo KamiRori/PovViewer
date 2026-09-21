@@ -201,8 +201,8 @@ export function PovCard({
   else if (proxyMissing) statusLabel = '代理未生成'
   else if (unplayable) statusLabel = '无法播放'
   else if (status === 'pending') statusLabel = '读取中'
-  else if (status === 'not_started') statusLabel = 'NOT STARTED'
-  else if (status === 'ended') statusLabel = 'ENDED'
+  else if (status === 'not_started') statusLabel = '未开始'
+  else if (status === 'ended') statusLabel = '已结束'
   else statusLabel = formatDuration(videoTime)
 
   function commitOffset(): void {
@@ -359,7 +359,7 @@ export function PovCard({
               }}
             />
             {status === 'not_started' || status === 'ended' ? (
-              <p className="pov-overlay">{status === 'not_started' ? 'NOT STARTED' : 'ENDED'}</p>
+              <p className="pov-overlay">{status === 'not_started' ? '未开始' : '已结束'}</p>
             ) : null}
           </>
         ) : (
@@ -420,7 +420,7 @@ export function PovCard({
           </button>
         </div>
         <label className="offset-row">
-          <span>offset</span>
+          <span>偏移</span>
           <input
             className="offset-input"
             value={offsetDraft}

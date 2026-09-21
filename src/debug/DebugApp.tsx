@@ -111,7 +111,7 @@ export function DebugApp() {
       </section>
 
       <section>
-        <h2>GPU Feature Status</h2>
+        <h2>GPU 功能状态</h2>
         <table>
           <thead>
             <tr>

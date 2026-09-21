@@ -51,7 +51,7 @@ export function PovGrid({
     if (!focused) {
       return (
         <div className="focus-missing">
-          <p>Focus 目标不在当前筛选结果中。</p>
+          <p>焦点目标不在当前筛选结果中。</p>
           <button type="button" className="focus-back" onClick={() => view.exitFocus()}>
             返回网格
           </button>

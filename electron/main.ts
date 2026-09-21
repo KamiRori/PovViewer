@@ -165,7 +165,7 @@ function registerIpc(): void {
     const result = await dialog.showOpenDialog({
       title: '导入 POV',
       properties: ['openFile', 'multiSelections'],
-      filters: [{ name: 'Video', extensions: ['mp4', 'mkv', 'mov', 'webm'] }]
+      filters: [{ name: '视频', extensions: ['mp4', 'mkv', 'mov', 'webm'] }]
     })
     if (result.canceled) return []
     const paths = result.filePaths.map((filePath) => mediaRegistry.register(filePath).absolutePath)
@@ -225,11 +225,11 @@ function registerIpc(): void {
     const hint =
       typeof currentPath === 'string' && currentPath.trim() ? basename(currentPath) : undefined
     const result = await dialog.showOpenDialog({
-      title: 'Locate File',
+      title: '定位文件',
       properties: ['openFile'],
       defaultPath: typeof currentPath === 'string' ? currentPath : undefined,
-      filters: [{ name: 'Video', extensions: ['mp4', 'mkv', 'mov', 'webm'] }],
-      message: hint ? `Locate replacement for ${hint}` : undefined
+      filters: [{ name: '视频', extensions: ['mp4', 'mkv', 'mov', 'webm'] }],
+      message: hint ? `为 ${hint} 选择替换文件` : undefined
     })
     if (result.canceled || result.filePaths.length === 0) return null
     const filePath = result.filePaths[0]
