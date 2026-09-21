@@ -62,7 +62,6 @@ export function App() {
     let failed = 0
     setHint(`正在读取时长 0/${paths.length}…`)
     try {
-      // One file at a time so each card leaves「读取中」as soon as its moov/ffmpeg probe finishes.
       for (let index = 0; index < paths.length; index += 1) {
         const filePath = paths[index]
         setHint(`正在读取时长 ${index + 1}/${paths.length}…`)
@@ -71,6 +70,8 @@ export function App() {
         if (entry?.duration !== null && entry?.duration !== undefined && Number.isFinite(entry.duration)) {
           setDurationsByPath([{ filePath: entry.filePath, duration: entry.duration }])
           ready += 1
+          // Warm a poster so the grid is not black while cards mount.
+          void window.povApi.ensurePoster(filePath, Math.min(5, Math.max(0.5, entry.duration * 0.01)))
         } else {
           failed += 1
           console.warn('[media] duration probe missed', filePath, entry?.error, entry?.method)
@@ -78,8 +79,8 @@ export function App() {
       }
       setHint(
         failed > 0
-          ? `时长就绪 ${ready}/${paths.length}（${failed} 个失败，可点选播放时再试）`
-          : `时长就绪 ${ready}/${paths.length}`
+          ? `时长就绪 ${ready}/${paths.length}（${failed} 个失败）；网格预览生成中…`
+          : `时长就绪 ${ready}/${paths.length}；网格预览生成中…`
       )
     } catch (error) {
       console.error('[media] probe durations failed', error)

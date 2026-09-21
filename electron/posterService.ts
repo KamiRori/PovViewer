@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { spawn } from 'node:child_process'
-import { access, mkdir } from 'node:fs/promises'
+import { access, mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app } from 'electron'
 import ffmpegPath from 'ffmpeg-static'
@@ -8,6 +8,8 @@ import ffmpegPath from 'ffmpeg-static'
 export interface PosterStatus {
   filePath: string
   posterPath: string | null
+  /** Prefer this in renderer — avoids custom-protocol <img> quirks. */
+  dataUrl: string | null
   status: 'ready' | 'error' | 'missing'
   error?: string
 }
@@ -36,9 +38,15 @@ export class PosterService {
     const hash = createHash('sha1')
     hash.update(sourcePath.replace(/\\/g, '/').toLowerCase())
     hash.update('|')
-    hash.update(String(Math.round(atSeconds * 2) / 2)) // 0.5s bucket
-    hash.update('|poster-480-v1')
+    // Coarse bucket: one poster per ~5s of timeline is enough for grid glance.
+    hash.update(String(Math.round(atSeconds / 5) * 5))
+    hash.update('|poster-480-v2')
     return hash.digest('hex')
+  }
+
+  private async toDataUrl(posterPath: string): Promise<string> {
+    const bytes = await readFile(posterPath)
+    return `data:image/jpeg;base64,${bytes.toString('base64')}`
   }
 
   async ensurePoster(sourcePath: string, atSeconds = 1): Promise<PosterStatus> {
@@ -46,7 +54,7 @@ export class PosterService {
       const safeAt = Number.isFinite(atSeconds) && atSeconds > 0 ? atSeconds : 1
       const key = this.cacheKey(sourcePath, safeAt)
       const cached = this.cache.get(key)
-      if (cached?.status === 'ready' && cached.posterPath) {
+      if (cached?.status === 'ready' && cached.posterPath && cached.dataUrl) {
         try {
           await access(cached.posterPath)
           return cached
@@ -59,6 +67,7 @@ export class PosterService {
         const failed: PosterStatus = {
           filePath: sourcePath,
           posterPath: null,
+          dataUrl: null,
           status: 'error',
           error: '未找到内置 FFmpeg'
         }
@@ -70,7 +79,13 @@ export class PosterService {
       const posterPath = join(dir, `${key}.jpg`)
       try {
         await access(posterPath)
-        const ready: PosterStatus = { filePath: sourcePath, posterPath, status: 'ready' }
+        const dataUrl = await this.toDataUrl(posterPath)
+        const ready: PosterStatus = {
+          filePath: sourcePath,
+          posterPath,
+          dataUrl,
+          status: 'ready'
+        }
         this.cache.set(key, ready)
         return ready
       } catch {
@@ -79,13 +94,20 @@ export class PosterService {
 
       try {
         await extractPoster(ffmpegPath, sourcePath, posterPath, safeAt)
-        const ready: PosterStatus = { filePath: sourcePath, posterPath, status: 'ready' }
+        const dataUrl = await this.toDataUrl(posterPath)
+        const ready: PosterStatus = {
+          filePath: sourcePath,
+          posterPath,
+          dataUrl,
+          status: 'ready'
+        }
         this.cache.set(key, ready)
         return ready
       } catch (error) {
         const failed: PosterStatus = {
           filePath: sourcePath,
           posterPath: null,
+          dataUrl: null,
           status: 'error',
           error: error instanceof Error ? error.message : String(error)
         }
@@ -119,12 +141,13 @@ function extractPoster(
       String(Math.max(0, atSeconds)),
       '-i',
       input,
+      '-an',
       '-frames:v',
       '1',
       '-vf',
       'scale=480:-2',
       '-q:v',
-      '6',
+      '7',
       '-y',
       output
     ]
@@ -133,7 +156,7 @@ function extractPoster(
     const timer = setTimeout(() => {
       child.kill()
       reject(new Error('生成封面超时'))
-    }, 60_000)
+    }, 90_000)
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString()
       if (stderr.length > 4000) stderr = stderr.slice(-4000)

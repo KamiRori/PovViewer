@@ -221,12 +221,15 @@ function registerIpc(): void {
     const status = await posterService.ensurePoster(filePath, at)
     if (status.status === 'ready' && status.posterPath) {
       mediaRegistry.register(status.posterPath)
-      return {
-        ...status,
-        url: mediaRegistry.urlFor(status.posterPath)
-      }
     }
-    return { ...status, url: null }
+    return {
+      filePath: status.filePath,
+      posterPath: status.posterPath,
+      status: status.status,
+      dataUrl: status.dataUrl,
+      url: status.posterPath ? mediaRegistry.urlFor(status.posterPath) : null,
+      error: status.error
+    }
   })
 
   ipcMain.handle(IpcChannel.openGpuDebug, () => {

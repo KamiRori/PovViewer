@@ -94,10 +94,10 @@ function VideoSurfaceImpl({
 
   const sampled = settings.playbackMode === 'sampled'
   /**
-   * Idle (paused) must not keep HTML5 decoders warm — that alone can pin high CPU
-   * even with video.pause(). Only attach while playing, or briefly after a paused seek.
+   * Armed + visible cards keep a decoder so scrubbing/paused grid still shows a frame
+   * (Focus-like). Unarmed cards stay on the JPEG poster only — that keeps idle CPU down.
    */
-  const attachMedia = armed && visible && (playing || pausedSeekAttach)
+  const attachMedia = armed && visible
   const live = attachMedia && !sampled && playing
   liveRef.current = live
 
@@ -151,10 +151,10 @@ function VideoSurfaceImpl({
     if (video.dataset.mediaSrc !== src) {
       video.dataset.mediaSrc = src
       video.src = src
-      // Prefer metadata while doing a paused still refresh; auto only for live play.
-      video.preload = playing ? 'auto' : 'metadata'
+      video.preload = 'auto'
       video.load()
       setMediaReady(false)
+      setHasStill(false)
     }
   }, [attachMedia, src, playing])
 
@@ -400,7 +400,11 @@ function VideoSurfaceImpl({
     <div ref={hostRef} className="video-host">
       <video
         ref={videoRef}
-        className={attachMedia ? 'video-surface' : 'video-surface video-surface-detached'}
+        className={
+          attachMedia && mediaReady
+            ? 'video-surface'
+            : 'video-surface video-surface-detached'
+        }
         muted
         playsInline
         preload="none"
@@ -418,18 +422,21 @@ function VideoSurfaceImpl({
         }}
         onError={() => onErrorRef.current()}
       />
-      {!attachMedia && posterUrl && !hasStill ? (
+      {/* Poster stays visible until a live frame exists — prevents black grid/arming flash. */}
+      {posterUrl && (!attachMedia || !mediaReady) ? (
         <img className="video-still video-poster" src={posterUrl} alt="" draggable={false} />
       ) : null}
       <canvas
         ref={stillRef}
-        className={`video-still${attachMedia || (!hasStill && posterUrl) ? ' video-still-hidden' : ''}${hasStill ? '' : ' is-empty'}`}
-        aria-hidden={attachMedia}
+        className={`video-still${
+          attachMedia || posterUrl || !hasStill ? ' video-still-hidden' : ''
+        }${hasStill ? '' : ' is-empty'}`}
+        aria-hidden={attachMedia || Boolean(posterUrl)}
       />
       {!attachMedia ? (
-        <p className="decode-badge">
-          {armed && !playing ? '暂停·静止帧' : hasStill || posterUrl ? '预览帧' : '等待预览…'}
-        </p>
+        <p className="decode-badge">{posterUrl ? '预览帧' : '等待预览…'}</p>
+      ) : !mediaReady ? (
+        <p className="decode-badge">加载画面…</p>
       ) : null}
       {sampled && attachMedia && playing ? (
         <p className="decode-badge decode-badge-quality">{settings.maxFps}fps 采样</p>

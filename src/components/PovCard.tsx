@@ -80,7 +80,9 @@ export function PovCard({
       .ensurePoster(pov.filePath, at)
       .then((poster) => {
         if (cancelled) return
-        if (poster.status === 'ready' && poster.url) setPosterUrl(poster.url)
+        const next = poster.dataUrl || poster.url
+        if (poster.status === 'ready' && next) setPosterUrl(next)
+        else if (poster.error) console.warn('[poster]', poster.error)
       })
       .catch((error) => {
         console.warn('[poster] ensure failed', pov.filePath, error)

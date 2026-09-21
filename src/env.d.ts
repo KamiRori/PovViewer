@@ -40,6 +40,7 @@ export interface PosterDto {
   posterPath: string | null
   status: string
   url: string | null
+  dataUrl: string | null
   error?: string
 }
 
