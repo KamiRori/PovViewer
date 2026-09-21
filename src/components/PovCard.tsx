@@ -9,7 +9,8 @@ import { shouldMutePov } from '../player/audioPolicy'
 import { usePlaybackArm } from '../player/playbackArm'
 import { VideoSurface } from '../player/VideoSurface'
 import { useViewUi } from '../player/viewUi'
-import type { POVRuntime } from '../project/types'
+import type { PlaybackSource, POVRuntime } from '../project/types'
+import { isPlaybackSource } from '../project/types'
 import {
   expectedVideoTime,
   povPlaybackStatus,
@@ -30,10 +31,23 @@ interface PovCardProps {
   variant?: 'grid' | 'focus-main' | 'focus-rail'
   onRename: (id: string, playerName: string) => void
   onOffset: (id: string, offset: number) => void
+  onPlaybackSource: (id: string, playbackSource: PlaybackSource) => void
   onRemove: (id: string) => void
   onDuration: (id: string, duration: number) => void
   onSoloAudio: (id: string) => void
   onLocate: (id: string) => void
+}
+
+async function resolveOriginalUrl(filePath: string): Promise<string> {
+  return window.povApi.toMediaUrl(filePath)
+}
+
+async function resolveProxyUrl(filePath: string): Promise<string | null> {
+  const cached = await window.povApi.getPreviewProxyStatus(filePath)
+  if (cached?.status === 'ready' && cached.proxyPath) {
+    return window.povApi.toMediaUrl(cached.proxyPath)
+  }
+  return null
 }
 
 export function PovCard({
@@ -46,6 +60,7 @@ export function PovCard({
   variant = 'grid',
   onRename,
   onOffset,
+  onPlaybackSource,
   onRemove,
   onDuration,
   onSoloAudio,
@@ -59,6 +74,7 @@ export function PovCard({
   const mediaUrlRef = useRef<string | null>(null)
   const [posterUrl, setPosterUrl] = useState<string | null>(null)
   const [unplayable, setUnplayable] = useState(false)
+  const [proxyMissing, setProxyMissing] = useState(false)
   const [draft, setDraft] = useState(pov.playerName)
   const [offsetDraft, setOffsetDraft] = useState(String(pov.offset))
   const fileName = fileNameFromPath(pov.filePath)
@@ -87,48 +103,60 @@ export function PovCard({
   useEffect(() => {
     if (pov.missing) {
       setMediaUrl(null)
+      setProxyMissing(false)
       return
     }
     let cancelled = false
     setUnplayable(false)
+    setProxyMissing(false)
     setMediaUrl(null)
 
     async function resolveSrc(): Promise<void> {
       try {
-        // Grid / rail: use a cached preview proxy if one already exists.
-        // Never auto-encode here — full-length proxies for 2h+ OBS files take forever.
-        if (variant !== 'focus-main') {
-          const cached = await window.povApi.getPreviewProxyStatus(pov.filePath)
-          if (cached?.status === 'ready' && cached.proxyPath) {
-            const proxyUrl = await window.povApi.toMediaUrl(cached.proxyPath)
-            if (!cancelled) {
-              setUnplayable(false)
-              setMediaUrl(proxyUrl)
-            }
+        if (pov.playbackSource === 'proxy') {
+          const proxyUrl = await resolveProxyUrl(pov.filePath)
+          if (cancelled) return
+          if (proxyUrl) {
+            setUnplayable(false)
+            setProxyMissing(false)
+            setMediaUrl(proxyUrl)
             return
           }
+          setProxyMissing(true)
+          setMediaUrl(null)
+          return
         }
-        const original = await window.povApi.toMediaUrl(pov.filePath)
-        if (!cancelled) setMediaUrl(original)
-      } catch {
+
+        const original = await resolveOriginalUrl(pov.filePath)
         if (!cancelled) {
-          // Unplayable original: only then kick a proxy encode as a compatibility fallback.
-          try {
-            const status = await window.povApi.ensurePreviewProxy(pov.filePath)
-            if (cancelled) return
-            if (status.status === 'ready' && status.proxyPath) {
-              const proxyUrl = await window.povApi.toMediaUrl(status.proxyPath)
-              if (!cancelled) {
-                setUnplayable(false)
-                setMediaUrl(proxyUrl)
-                return
-              }
-            }
-          } catch {
-            // ignore — show unplayable
-          }
-          if (!cancelled) setUnplayable(true)
+          setProxyMissing(false)
+          setMediaUrl(original)
         }
+      } catch {
+        if (cancelled) return
+        // Preferred source failed: try the other one once.
+        try {
+          if (pov.playbackSource === 'original') {
+            const proxyUrl = await resolveProxyUrl(pov.filePath)
+            if (cancelled) return
+            if (proxyUrl) {
+              setUnplayable(false)
+              setProxyMissing(false)
+              setMediaUrl(proxyUrl)
+              return
+            }
+          } else {
+            const original = await resolveOriginalUrl(pov.filePath)
+            if (!cancelled) {
+              setProxyMissing(false)
+              setMediaUrl(original)
+              return
+            }
+          }
+        } catch {
+          // fall through
+        }
+        if (!cancelled) setUnplayable(true)
       }
     }
 
@@ -136,7 +164,7 @@ export function PovCard({
     return () => {
       cancelled = true
     }
-  }, [pov.filePath, pov.missing, variant, proxyEpoch])
+  }, [pov.filePath, pov.missing, pov.playbackSource, proxyEpoch])
 
   // Idle grid / rail: one cheap JPEG poster per file (fixed t≈1s). Do not refresh on scrub.
   useEffect(() => {
@@ -171,6 +199,7 @@ export function PovCard({
 
   let statusLabel = '—'
   if (pov.missing) statusLabel = 'Missing File'
+  else if (proxyMissing) statusLabel = '代理未生成'
   else if (unplayable) statusLabel = '无法播放'
   else if (status === 'pending') statusLabel = '读取中'
   else if (status === 'not_started') statusLabel = 'NOT STARTED'
@@ -289,6 +318,8 @@ export function PovCard({
               Locate File
             </button>
           </div>
+        ) : proxyMissing ? (
+          <p className="pov-placeholder">代理未生成，请先点「生成预览代理」或改选原片</p>
         ) : unplayable ? (
           <p className="pov-placeholder">无法直接播放</p>
         ) : mediaUrl ? (
@@ -310,14 +341,13 @@ export function PovCard({
               onError={() => {
                 void (async () => {
                   try {
-                    const status = await window.povApi.ensurePreviewProxy(pov.filePath)
-                    if (status.status === 'ready' && status.proxyPath) {
-                      const proxyUrl = await window.povApi.toMediaUrl(status.proxyPath)
-                      // Same broken proxy already attached — do not loop.
-                      if (proxyUrl === mediaUrlRef.current) {
-                        setUnplayable(true)
-                        return
-                      }
+                    if (pov.playbackSource === 'proxy') {
+                      // Already on proxy — do not loop.
+                      setUnplayable(true)
+                      return
+                    }
+                    const proxyUrl = await resolveProxyUrl(pov.filePath)
+                    if (proxyUrl && proxyUrl !== mediaUrlRef.current) {
                       setUnplayable(false)
                       setMediaUrl(proxyUrl)
                       return
@@ -363,6 +393,22 @@ export function PovCard({
         </span>
         <span className="pov-status">{statusLabel}</span>
       </div>
+      <label className="source-row">
+        <span>片源</span>
+        <select
+          className="source-select"
+          value={pov.playbackSource}
+          aria-label="播放片源"
+          onChange={(event) => {
+            const next = event.target.value
+            if (isPlaybackSource(next)) onPlaybackSource(pov.id, next)
+          }}
+          onClick={(event) => event.stopPropagation()}
+        >
+          <option value="proxy">代理预览</option>
+          <option value="original">原片直通</option>
+        </select>
+      </label>
       <label className="offset-row">
         <span>offset</span>
         <input

@@ -7,7 +7,7 @@ import {
   type ReactNode
 } from 'react'
 import type { SyncResult } from '../sync/types'
-import type { ColumnCount, POVRuntime } from './types'
+import type { ColumnCount, PlaybackSource, POVRuntime } from './types'
 import { initialProjectState, projectReducer, type ProjectState } from './reducer'
 
 interface ProjectApi {
@@ -19,6 +19,7 @@ interface ProjectApi {
   setDuration: (id: string, duration: number) => void
   setDurationsByPath: (entries: Array<{ filePath: string; duration: number }>) => void
   setOffset: (id: string, offset: number) => void
+  setPlaybackSource: (id: string, playbackSource: PlaybackSource) => void
   setMuted: (id: string, muted: boolean) => void
   soloAudio: (id: string) => void
   applySyncResults: (results: SyncResult[]) => void
@@ -55,6 +56,11 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   )
   const setOffset = useCallback(
     (id: string, offset: number) => dispatch({ type: 'setOffset', id, offset }),
+    []
+  )
+  const setPlaybackSource = useCallback(
+    (id: string, playbackSource: PlaybackSource) =>
+      dispatch({ type: 'setPlaybackSource', id, playbackSource }),
     []
   )
   const setMuted = useCallback(
@@ -95,6 +101,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       setDuration,
       setDurationsByPath,
       setOffset,
+      setPlaybackSource,
       setMuted,
       soloAudio,
       applySyncResults,
@@ -113,6 +120,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       setDuration,
       setDurationsByPath,
       setOffset,
+      setPlaybackSource,
       setMuted,
       soloAudio,
       applySyncResults,

@@ -27,6 +27,7 @@ export function importPovPaths(
       offset: 0,
       enabled: true,
       muted: true,
+      playbackSource: 'proxy',
       metadataReady: false,
       missing: false
     })

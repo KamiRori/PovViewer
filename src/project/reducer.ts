@@ -1,4 +1,4 @@
-import type { ColumnCount, POVRuntime } from './types'
+import type { ColumnCount, PlaybackSource, POVRuntime } from './types'
 import { importPovPaths } from './importPov'
 import { applySync } from '../sync/applySync'
 import type { SyncResult } from '../sync/types'
@@ -26,6 +26,7 @@ export type ProjectAction =
   | { type: 'metadata'; id: string; duration: number }
   | { type: 'metadataByPath'; entries: Array<{ filePath: string; duration: number }> }
   | { type: 'setOffset'; id: string; offset: number }
+  | { type: 'setPlaybackSource'; id: string; playbackSource: PlaybackSource }
   | { type: 'setMuted'; id: string; muted: boolean }
   | { type: 'soloAudio'; id: string }
   | { type: 'applySync'; results: SyncResult[] }
@@ -94,6 +95,13 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
         )
       }
     }
+    case 'setPlaybackSource':
+      return {
+        ...state,
+        povs: state.povs.map((pov) =>
+          pov.id === action.id ? { ...pov, playbackSource: action.playbackSource } : pov
+        )
+      }
     case 'setMuted':
       return {
         ...state,

@@ -11,6 +11,7 @@ function samplePov(overrides: Partial<POVRuntime> = {}): POVRuntime {
     offset: 0,
     enabled: true,
     muted: true,
+    playbackSource: 'proxy',
     metadataReady: true,
     missing: false,
     ...overrides
@@ -38,9 +39,15 @@ describe('serializeProject', () => {
       filePath: 'D:/POV/Alice.mp4',
       offset: 0,
       enabled: true,
-      muted: true
+      muted: true,
+      playbackSource: 'proxy'
     })
     expect(json.povs[0]).not.toHaveProperty('duration')
+  })
+
+  it('round-trips an original playbackSource', () => {
+    const json = serializeProject([samplePov({ playbackSource: 'original' })])
+    expect(json.povs[0]?.playbackSource).toBe('original')
   })
 })
 
@@ -56,7 +63,30 @@ describe('parseProjectJson', () => {
     if (!parsed.ok) return
     expect(parsed.runtime[0]?.duration).toBe(0)
     expect(parsed.runtime[0]?.metadataReady).toBe(false)
+    expect(parsed.runtime[0]?.playbackSource).toBe('proxy')
     expect(parsed.project.povs[0]?.playerName).toBe('Alice')
+  })
+
+  it('defaults playbackSource when omitted from older files', () => {
+    const parsed = parseProjectJson(
+      JSON.stringify({
+        version: 1,
+        masterDuration: 0,
+        povs: [
+          {
+            id: 'alice',
+            playerName: 'Alice',
+            filePath: 'D:/POV/Alice.mp4',
+            offset: 0,
+            enabled: true,
+            muted: true
+          }
+        ]
+      })
+    )
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.runtime[0]?.playbackSource).toBe('proxy')
   })
 
   it('rejects unsupported versions', () => {

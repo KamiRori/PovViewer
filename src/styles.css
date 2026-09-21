@@ -175,6 +175,25 @@ main {
   font-size: 12px;
 }
 
+.source-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.source-select {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--line);
+  background: #12141a;
+  border-radius: 4px;
+  padding: 2px 6px;
+  color: inherit;
+}
+
 .offset-input {
   width: 72px;
   border: 1px solid var(--line);

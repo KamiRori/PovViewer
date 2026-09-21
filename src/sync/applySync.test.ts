@@ -11,6 +11,7 @@ function pov(name: string, offset = 0): POVRuntime {
     offset,
     enabled: true,
     muted: true,
+    playbackSource: 'proxy',
     metadataReady: true,
     missing: false
   }

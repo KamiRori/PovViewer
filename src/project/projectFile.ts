@@ -1,5 +1,11 @@
 import { computeTimelineRange } from '../timeline/range'
-import type { POV, POVRuntime } from './types'
+import {
+  DEFAULT_PLAYBACK_SOURCE,
+  isPlaybackSource,
+  type POV,
+  type POVRuntime,
+  type PlaybackSource
+} from './types'
 
 export interface ProjectFilePovV1 {
   id: string
@@ -8,6 +14,8 @@ export interface ProjectFilePovV1 {
   offset: number
   enabled: boolean
   muted: boolean
+  /** Optional for older project.json files. */
+  playbackSource?: PlaybackSource
 }
 
 export interface ProjectFileV1 {
@@ -31,7 +39,8 @@ export function serializeProject(povs: readonly POVRuntime[]): ProjectFileV1 {
       filePath: pov.filePath,
       offset: pov.offset,
       enabled: pov.enabled,
-      muted: pov.muted
+      muted: pov.muted,
+      playbackSource: pov.playbackSource
     }))
   }
 }
@@ -63,13 +72,17 @@ function asPovEntry(entry: unknown, index: number): ProjectFilePovV1 | string {
   if (typeof item.muted !== 'boolean') {
     return `povs[${index}].muted 无效`
   }
+  if (item.playbackSource !== undefined && !isPlaybackSource(item.playbackSource)) {
+    return `povs[${index}].playbackSource 无效`
+  }
   return {
     id: item.id,
     playerName: item.playerName,
     filePath: item.filePath,
     offset: item.offset,
     enabled: item.enabled,
-    muted: item.muted
+    muted: item.muted,
+    playbackSource: isPlaybackSource(item.playbackSource) ? item.playbackSource : undefined
   }
 }
 
@@ -82,7 +95,8 @@ export function toRuntimePov(entry: ProjectFilePovV1, missing = false): POVRunti
     duration: 0,
     offset: entry.offset,
     enabled: entry.enabled,
-    muted: entry.muted
+    muted: entry.muted,
+    playbackSource: entry.playbackSource ?? DEFAULT_PLAYBACK_SOURCE
   }
   return {
     ...pov,

@@ -11,6 +11,7 @@ import { parseSyncJson } from './sync/parseSync'
 import { usePlayback } from './timeline/store'
 import { dataTransferHasFiles, pathsFromDroppedFiles } from './utils/dropFiles'
 import { fileNameFromPath } from './utils/playerName'
+import type { PlaybackSource } from './project/types'
 
 export function App() {
   const {
@@ -22,6 +23,7 @@ export function App() {
     setDuration,
     setDurationsByPath,
     setOffset,
+    setPlaybackSource,
     soloAudio,
     applySyncResults,
     clearSyncReport,
@@ -312,6 +314,10 @@ export function App() {
     resync()
   }
 
+  function onPlaybackSourceChange(id: string, playbackSource: PlaybackSource): void {
+    setPlaybackSource(id, playbackSource)
+  }
+
   function onRemove(id: string): void {
     if (view.focusId === id) view.exitFocus()
     if (view.activeId === id) view.setActiveId(null)
@@ -411,6 +417,7 @@ export function App() {
             proxyEpoch={proxyEpoch}
             onRename={rename}
             onOffset={onOffsetChange}
+            onPlaybackSource={onPlaybackSourceChange}
             onRemove={onRemove}
             onDuration={setDuration}
             onSoloAudio={soloAudio}

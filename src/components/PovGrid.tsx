@@ -1,7 +1,7 @@
 import type { CSSProperties } from 'react'
 import { matchesPlayerQuery } from '../player/audioPolicy'
 import { useViewUi } from '../player/viewUi'
-import type { ColumnCount, POVRuntime } from '../project/types'
+import type { ColumnCount, PlaybackSource, POVRuntime } from '../project/types'
 import type { PlaybackRate } from '../timeline/playbackMath'
 import { formatMasterTime } from '../timeline/timeFormat'
 import { PovCard } from './PovCard'
@@ -17,6 +17,7 @@ interface PovGridProps {
   proxyEpoch: number
   onRename: (id: string, playerName: string) => void
   onOffset: (id: string, offset: number) => void
+  onPlaybackSource: (id: string, playbackSource: PlaybackSource) => void
   onRemove: (id: string) => void
   onDuration: (id: string, duration: number) => void
   onSoloAudio: (id: string) => void
@@ -33,6 +34,7 @@ export function PovGrid({
   proxyEpoch,
   onRename,
   onOffset,
+  onPlaybackSource,
   onRemove,
   onDuration,
   onSoloAudio,
@@ -42,7 +44,8 @@ export function PovGrid({
   const filtered = povs.filter((pov) => matchesPlayerQuery(pov.playerName, view.query))
 
   if (view.mode === 'focus' && view.focusId) {
-    const focused = filtered.find((pov) => pov.id === view.focusId) ?? povs.find((pov) => pov.id === view.focusId)
+    const focused =
+      filtered.find((pov) => pov.id === view.focusId) ?? povs.find((pov) => pov.id === view.focusId)
     const rail = filtered.filter((pov) => pov.id !== view.focusId)
 
     if (!focused) {
@@ -76,6 +79,7 @@ export function PovGrid({
             variant="focus-main"
             onRename={onRename}
             onOffset={onOffset}
+            onPlaybackSource={onPlaybackSource}
             onRemove={onRemove}
             onDuration={onDuration}
             onSoloAudio={onSoloAudio}
@@ -95,6 +99,7 @@ export function PovGrid({
               variant="focus-rail"
               onRename={onRename}
               onOffset={onOffset}
+              onPlaybackSource={onPlaybackSource}
               onRemove={onRemove}
               onDuration={onDuration}
               onSoloAudio={onSoloAudio}
@@ -119,6 +124,7 @@ export function PovGrid({
           proxyEpoch={proxyEpoch}
           onRename={onRename}
           onOffset={onOffset}
+          onPlaybackSource={onPlaybackSource}
           onRemove={onRemove}
           onDuration={onDuration}
           onSoloAudio={onSoloAudio}
