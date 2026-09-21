@@ -28,6 +28,8 @@ export function importPovPaths(
       enabled: true,
       muted: true,
       playbackSource: 'original',
+      markerColor: null,
+      exportRanges: [],
       metadataReady: false,
       missing: false
     })

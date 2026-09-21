@@ -1,4 +1,9 @@
 import { createContext, useContext, useEffect, useId, useRef, useState, type ReactNode } from 'react'
+import {
+  MARKER_COLORS,
+  MARKER_COLOR_LABELS,
+  type MarkerFilter
+} from '../project/markerColor'
 import { COLUMN_OPTIONS, type ColumnCount } from '../project/types'
 
 interface ToolbarProps {
@@ -6,16 +11,24 @@ interface ToolbarProps {
   count: number
   busy: boolean
   query: string
+  markerFilter: MarkerFilter
   projectPath: string | null
   proxyBusy: boolean
+  exportBusy: boolean
+  canUndo: boolean
+  canRedo: boolean
+  onUndo: () => void
+  onRedo: () => void
   onImportPov: () => void
   onImportSync: () => void
   onSaveProject: () => void
   onOpenProject: () => void
   onGenerateProxies: () => void
+  onExportSelections: () => void
   onColumns: (columns: ColumnCount) => void
   onOpenGpuDebug: () => void
   onQuery: (query: string) => void
+  onMarkerFilter: (filter: MarkerFilter) => void
 }
 
 const MenuCloseContext = createContext<() => void>(() => undefined)
@@ -80,12 +93,14 @@ function MenuItem({
   children,
   onClick,
   disabled,
-  title
+  title,
+  shortcut
 }: {
   children: ReactNode
   onClick: () => void
   disabled?: boolean
   title?: string
+  shortcut?: string
 }) {
   const close = useContext(MenuCloseContext)
   return (
@@ -100,7 +115,8 @@ function MenuItem({
         close()
       }}
     >
-      {children}
+      <span className="menu-item-label">{children}</span>
+      {shortcut ? <span className="menu-item-shortcut">{shortcut}</span> : null}
     </button>
   )
 }
@@ -133,22 +149,64 @@ function MenuColumns({
   )
 }
 
+const isMac =
+  typeof navigator !== 'undefined' && /Mac|iPhone|iPad|iPod/i.test(navigator.platform)
+const mod = isMac ? '⌘' : 'Ctrl+'
+
 export function Toolbar({
   columns,
   count,
   busy,
   query,
+  markerFilter,
   projectPath,
   proxyBusy,
+  exportBusy,
+  canUndo,
+  canRedo,
+  onUndo,
+  onRedo,
   onImportPov,
   onImportSync,
   onSaveProject,
   onOpenProject,
   onGenerateProxies,
+  onExportSelections,
   onColumns,
   onOpenGpuDebug,
-  onQuery
+  onQuery,
+  onMarkerFilter
 }: ToolbarProps) {
+  const [filterOpen, setFilterOpen] = useState(false)
+  const searchRef = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!filterOpen) return
+    function onPointerDown(event: PointerEvent): void {
+      const node = searchRef.current
+      if (!node) return
+      if (event.target instanceof Node && !node.contains(event.target)) {
+        setFilterOpen(false)
+      }
+    }
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') setFilterOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [filterOpen])
+
+  const filterLabel =
+    markerFilter === null
+      ? null
+      : markerFilter === 'none'
+        ? '无标记'
+        : MARKER_COLOR_LABELS[markerFilter]
+
   return (
     <div className="toolbar">
       <nav className="menubar" aria-label="主菜单">
@@ -167,11 +225,12 @@ export function Toolbar({
               onImportSync()
             }}
           >
-            导入同步
+            导入项目
           </MenuItem>
           <div className="menu-sep" role="separator" />
           <MenuItem
             disabled={busy}
+            shortcut={`${mod}O`}
             onClick={() => {
               onOpenProject()
             }}
@@ -180,12 +239,45 @@ export function Toolbar({
           </MenuItem>
           <MenuItem
             disabled={busy}
+            shortcut={`${mod}S`}
             title={projectPath ?? '另存为 project.json'}
             onClick={() => {
               onSaveProject()
             }}
           >
             保存项目
+          </MenuItem>
+          <div className="menu-sep" role="separator" />
+          <MenuItem
+            disabled={busy || exportBusy || count === 0}
+            title="按各 POV 时间轴上的导出选区裁剪源视频，导出为 mp4 片段"
+            onClick={() => {
+              onExportSelections()
+            }}
+          >
+            {exportBusy ? '导出视频中…' : '导出选区视频'}
+          </MenuItem>
+        </MenuGroup>
+
+        <MenuGroup label="编辑">
+          <MenuItem
+            disabled={!canUndo}
+            shortcut={`${mod}Z`}
+            onClick={() => {
+              onUndo()
+            }}
+          >
+            撤销
+          </MenuItem>
+          <MenuItem
+            disabled={!canRedo}
+            shortcut={isMac ? '⇧⌘Z' : 'Ctrl+Y'}
+            title={isMac ? undefined : '也可使用 Ctrl+Shift+Z'}
+            onClick={() => {
+              onRedo()
+            }}
+          >
+            重做
           </MenuItem>
         </MenuGroup>
 
@@ -217,15 +309,80 @@ export function Toolbar({
         </MenuGroup>
       </nav>
 
-      <label className="search">
-        <span className="visually-hidden">搜索玩家</span>
-        <input
-          value={query}
-          placeholder="搜索玩家"
-          spellCheck={false}
-          onChange={(event) => onQuery(event.target.value)}
-        />
-      </label>
+      <div className={`search${filterOpen ? ' is-open' : ''}`} ref={searchRef}>
+        <label className="search-field">
+          <span className="visually-hidden">搜索玩家</span>
+          <input
+            value={query}
+            placeholder="搜索玩家"
+            spellCheck={false}
+            title="点击展开颜色筛选；输入可按玩家名搜索"
+            onFocus={() => setFilterOpen(true)}
+            onClick={() => setFilterOpen(true)}
+            onChange={(event) => onQuery(event.target.value)}
+          />
+        </label>
+        {filterLabel ? (
+          <button
+            type="button"
+            className={`search-filter-chip${
+              markerFilter && markerFilter !== 'none' ? ` marker-${markerFilter}` : ''
+            }`}
+            title="清除颜色筛选"
+            onClick={() => onMarkerFilter(null)}
+          >
+            {filterLabel}
+            <span aria-hidden>×</span>
+          </button>
+        ) : null}
+        {filterOpen ? (
+          <div className="search-filter-panel" role="listbox" aria-label="按颜色标记筛选">
+            <div className="search-filter-swatches">
+              {MARKER_COLORS.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  className={`search-filter-swatch marker-${color}${
+                    markerFilter === color ? ' is-active' : ''
+                  }`}
+                  role="option"
+                  aria-selected={markerFilter === color}
+                  title={
+                    markerFilter === color
+                      ? `取消「${MARKER_COLOR_LABELS[color]}」筛选`
+                      : `筛选「${MARKER_COLOR_LABELS[color]}」`
+                  }
+                  aria-label={MARKER_COLOR_LABELS[color]}
+                  onClick={() =>
+                    onMarkerFilter(markerFilter === color ? null : color)
+                  }
+                />
+              ))}
+            </div>
+            <div className="search-filter-actions">
+              <button
+                type="button"
+                className={`search-filter-option${markerFilter === null ? ' is-active' : ''}`}
+                role="option"
+                aria-selected={markerFilter === null}
+                onClick={() => onMarkerFilter(null)}
+              >
+                全部
+              </button>
+              <button
+                type="button"
+                className={`search-filter-option${markerFilter === 'none' ? ' is-active' : ''}`}
+                role="option"
+                aria-selected={markerFilter === 'none'}
+                title={markerFilter === 'none' ? '取消「无标记」筛选' : '仅显示无标记'}
+                onClick={() => onMarkerFilter(markerFilter === 'none' ? null : 'none')}
+              >
+                无标记
+              </button>
+            </div>
+          </div>
+        ) : null}
+      </div>
       <p className="count">{count} 个 POV</p>
     </div>
   )

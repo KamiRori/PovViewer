@@ -60,6 +60,16 @@ export interface PovApi {
   writeTextFile: (filePath: string, text: string) => Promise<boolean>
   pathExists: (filePath: string) => Promise<boolean>
   selectReplacementFile: (currentPath: string) => Promise<string | null>
+  selectExportDirectory: () => Promise<string | null>
+  beginExportVideoClips: () => Promise<boolean>
+  exportVideoClip: (request: {
+    sourcePath: string
+    outputDir: string
+    outputName: string
+    videoStart: number
+    videoEnd: number
+  }) => Promise<{ outputPath: string; cancelled: boolean }>
+  cancelExportVideoClip: () => Promise<boolean>
   ensurePreviewProxy: (filePath: string) => Promise<ProxyStatusDto>
   getPreviewProxyStatus: (filePath: string) => Promise<ProxyStatusDto | null>
   ensurePreviewProxies: (paths: string[]) => Promise<ProxyStatusDto[]>

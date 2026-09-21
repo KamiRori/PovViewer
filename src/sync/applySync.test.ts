@@ -12,6 +12,8 @@ function pov(name: string, offset = 0): POVRuntime {
     enabled: true,
     muted: true,
     playbackSource: 'proxy',
+    markerColor: null,
+    exportRanges: [],
     metadataReady: true,
     missing: false
   }

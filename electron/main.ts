@@ -5,6 +5,7 @@ import { basename, extname, join } from 'node:path'
 import { IpcChannel } from './channels'
 import { collectDebugSnapshot, setLatestFeatureReport } from './debugMetrics'
 import { DEBUG_METRICS_PUSH, type FeaturePerfReport } from './debugTypes'
+import { exportVideoClip, cancelExport, resetExportCancellation, ExportCancelledError } from './exportClips'
 import { probeFileDurations } from './mediaDuration'
 import { MediaRegistry } from './mediaRegistry'
 import { registerMediaProtocol } from './mediaProtocol'
@@ -235,6 +236,58 @@ function registerIpc(): void {
     const filePath = result.filePaths[0]
     if (!filePath || !isVideoPath(filePath)) return null
     return mediaRegistry.register(filePath).absolutePath
+  })
+
+  ipcMain.handle(IpcChannel.selectExportDirectory, async () => {
+    const result = await dialog.showOpenDialog({
+      title: '选择导出目录',
+      properties: ['openDirectory', 'createDirectory']
+    })
+    if (result.canceled || result.filePaths.length === 0) return null
+    return result.filePaths[0] ?? null
+  })
+
+  ipcMain.handle(IpcChannel.beginExportVideoClips, () => {
+    resetExportCancellation()
+    return true
+  })
+
+  ipcMain.handle(IpcChannel.exportVideoClip, async (_event, payload: unknown) => {
+    if (!payload || typeof payload !== 'object') {
+      throw new Error('invalid export payload')
+    }
+    const body = payload as Record<string, unknown>
+    const sourcePath = typeof body.sourcePath === 'string' ? body.sourcePath.trim() : ''
+    const outputDir = typeof body.outputDir === 'string' ? body.outputDir.trim() : ''
+    const outputName = typeof body.outputName === 'string' ? body.outputName.trim() : ''
+    const videoStart = typeof body.videoStart === 'number' ? body.videoStart : Number.NaN
+    const videoEnd = typeof body.videoEnd === 'number' ? body.videoEnd : Number.NaN
+
+    if (!sourcePath || !outputDir || !outputName) {
+      throw new Error('invalid export paths')
+    }
+    if (outputName.includes('/') || outputName.includes('\\') || outputName.includes('..')) {
+      throw new Error('invalid output name')
+    }
+    if (!Number.isFinite(videoStart) || !Number.isFinite(videoEnd) || videoEnd <= videoStart) {
+      throw new Error('invalid export range')
+    }
+
+    const outputPath = join(outputDir, outputName)
+    try {
+      await exportVideoClip({ sourcePath, outputPath, videoStart, videoEnd })
+      return { outputPath, cancelled: false as const }
+    } catch (error) {
+      if (error instanceof ExportCancelledError) {
+        return { outputPath, cancelled: true as const }
+      }
+      throw error
+    }
+  })
+
+  ipcMain.handle(IpcChannel.cancelExportVideoClip, () => {
+    cancelExport()
+    return true
   })
 
   ipcMain.handle(IpcChannel.registerPaths, (_event, paths: unknown) => {

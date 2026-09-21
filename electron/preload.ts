@@ -33,6 +33,20 @@ const povApi = {
     ipcRenderer.invoke(IpcChannel.saveJsonFile, defaultName),
   selectReplacementFile: (currentPath: string): Promise<string | null> =>
     ipcRenderer.invoke(IpcChannel.selectReplacementFile, currentPath),
+  selectExportDirectory: (): Promise<string | null> =>
+    ipcRenderer.invoke(IpcChannel.selectExportDirectory),
+  beginExportVideoClips: (): Promise<boolean> =>
+    ipcRenderer.invoke(IpcChannel.beginExportVideoClips),
+  exportVideoClip: (request: {
+    sourcePath: string
+    outputDir: string
+    outputName: string
+    videoStart: number
+    videoEnd: number
+  }): Promise<{ outputPath: string; cancelled: boolean }> =>
+    ipcRenderer.invoke(IpcChannel.exportVideoClip, request),
+  cancelExportVideoClip: (): Promise<boolean> =>
+    ipcRenderer.invoke(IpcChannel.cancelExportVideoClip),
   ensurePreviewProxy: (filePath: string): Promise<ProxyStatusDto> =>
     ipcRenderer.invoke(IpcChannel.ensurePreviewProxy, filePath),
   getPreviewProxyStatus: (filePath: string): Promise<ProxyStatusDto | null> =>

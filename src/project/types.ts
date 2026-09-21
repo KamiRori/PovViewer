@@ -1,3 +1,6 @@
+import type { ExportSelection } from '../timeline/selection'
+import type { MarkerColor } from './markerColor'
+
 export interface POV {
   id: string
   playerName: string
@@ -8,6 +11,10 @@ export interface POV {
   muted: boolean
   /** Grid/Focus media: original file or generated preview proxy. */
   playbackSource: PlaybackSource
+  /** Optional color tag for filtering and export-range styling. */
+  markerColor: MarkerColor | null
+  /** Master-timeline export in/out ranges (multiple allowed). */
+  exportRanges: ExportSelection[]
 }
 
 export type PlaybackSource = 'original' | 'proxy'

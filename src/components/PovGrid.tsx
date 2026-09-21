@@ -1,6 +1,6 @@
 import type { CSSProperties } from 'react'
-import { matchesPlayerQuery } from '../player/audioPolicy'
 import { useViewUi } from '../player/viewUi'
+import { matchesPovQuery, type MarkerColor } from '../project/markerColor'
 import type { ColumnCount, PlaybackSource, POVRuntime } from '../project/types'
 import type { PlaybackRate } from '../timeline/playbackMath'
 import { formatMasterTime } from '../timeline/timeFormat'
@@ -22,6 +22,8 @@ interface PovGridProps {
   onDuration: (id: string, duration: number) => void
   onToggleMute: (id: string) => void
   onLocate: (id: string) => void
+  onReorder: (fromId: string, toId: string) => void
+  onMarkerColor: (id: string, markerColor: MarkerColor | null) => void
 }
 
 export function PovGrid({
@@ -38,10 +40,18 @@ export function PovGrid({
   onRemove,
   onDuration,
   onToggleMute,
-  onLocate
+  onLocate,
+  onReorder,
+  onMarkerColor
 }: PovGridProps) {
   const view = useViewUi()
-  const filtered = povs.filter((pov) => matchesPlayerQuery(pov.playerName, view.query))
+  const filtered = povs.filter((pov) =>
+    matchesPovQuery(
+      { playerName: pov.playerName, markerColor: pov.markerColor },
+      view.query,
+      view.markerFilter
+    )
+  )
 
   if (view.mode === 'focus' && view.focusId) {
     const focused =
@@ -84,6 +94,8 @@ export function PovGrid({
             onDuration={onDuration}
             onToggleMute={onToggleMute}
             onLocate={onLocate}
+            onReorder={onReorder}
+            onMarkerColor={onMarkerColor}
           />
         </div>
         <aside className="focus-rail" aria-label="其他 POV">
@@ -104,6 +116,8 @@ export function PovGrid({
               onDuration={onDuration}
               onToggleMute={onToggleMute}
               onLocate={onLocate}
+              onReorder={onReorder}
+              onMarkerColor={onMarkerColor}
             />
           ))}
         </aside>
@@ -129,9 +143,11 @@ export function PovGrid({
           onDuration={onDuration}
           onToggleMute={onToggleMute}
           onLocate={onLocate}
+          onReorder={onReorder}
+          onMarkerColor={onMarkerColor}
         />
       ))}
-      {filtered.length === 0 ? <p className="empty-filter">没有匹配的玩家名</p> : null}
+      {filtered.length === 0 ? <p className="empty-filter">没有匹配的玩家名或颜色标记</p> : null}
     </div>
   )
 }

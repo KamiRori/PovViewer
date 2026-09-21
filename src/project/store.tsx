@@ -7,11 +7,23 @@ import {
   type ReactNode
 } from 'react'
 import type { SyncResult } from '../sync/types'
+import type { TimelineSelection } from '../timeline/selection'
+import type { MarkerColor } from './markerColor'
 import type { ColumnCount, PlaybackSource, POVRuntime } from './types'
-import { initialProjectState, projectReducer, type ProjectState } from './reducer'
+import type { ProjectState } from './reducer'
+import {
+  canRedo as historyCanRedo,
+  canUndo as historyCanUndo,
+  initialProjectHistoryState,
+  projectHistoryReducer
+} from './history'
 
 interface ProjectApi {
   state: ProjectState
+  canUndo: boolean
+  canRedo: boolean
+  undo: () => void
+  redo: () => void
   importFiles: (paths: string[]) => void
   rename: (id: string, playerName: string) => void
   remove: (id: string) => void
@@ -21,6 +33,11 @@ interface ProjectApi {
   setOffset: (id: string, offset: number) => void
   setPlaybackSource: (id: string, playbackSource: PlaybackSource) => void
   setMuted: (id: string, muted: boolean) => void
+  setMarkerColor: (id: string, markerColor: MarkerColor | null) => void
+  addExportRange: (id: string, range: TimelineSelection) => void
+  updateExportRange: (id: string, selectionId: string, range: TimelineSelection) => void
+  removeExportRange: (id: string, selectionId: string) => void
+  reorder: (fromId: string, toId: string) => void
   applySyncResults: (results: SyncResult[]) => void
   clearSyncReport: () => void
   loadProject: (povs: POVRuntime[], projectPath: string | null) => void
@@ -32,8 +49,11 @@ interface ProjectApi {
 const ProjectContext = createContext<ProjectApi | null>(null)
 
 export function ProjectProvider({ children }: { children: ReactNode }) {
-  const [state, dispatch] = useReducer(projectReducer, initialProjectState)
+  const [history, dispatch] = useReducer(projectHistoryReducer, initialProjectHistoryState)
+  const state = history.present
 
+  const undo = useCallback(() => dispatch({ type: 'undo' }), [])
+  const redo = useCallback(() => dispatch({ type: 'redo' }), [])
   const importFiles = useCallback((paths: string[]) => dispatch({ type: 'import', paths }), [])
   const rename = useCallback(
     (id: string, playerName: string) => dispatch({ type: 'rename', id, playerName }),
@@ -66,6 +86,29 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     (id: string, muted: boolean) => dispatch({ type: 'setMuted', id, muted }),
     []
   )
+  const setMarkerColor = useCallback(
+    (id: string, markerColor: MarkerColor | null) =>
+      dispatch({ type: 'setMarkerColor', id, markerColor }),
+    []
+  )
+  const addExportRange = useCallback(
+    (id: string, range: TimelineSelection) => dispatch({ type: 'addExportRange', id, range }),
+    []
+  )
+  const updateExportRange = useCallback(
+    (id: string, selectionId: string, range: TimelineSelection) =>
+      dispatch({ type: 'updateExportRange', id, selectionId, range }),
+    []
+  )
+  const removeExportRange = useCallback(
+    (id: string, selectionId: string) =>
+      dispatch({ type: 'removeExportRange', id, selectionId }),
+    []
+  )
+  const reorder = useCallback(
+    (fromId: string, toId: string) => dispatch({ type: 'reorder', fromId, toId }),
+    []
+  )
   const applySyncResults = useCallback(
     (results: SyncResult[]) => dispatch({ type: 'applySync', results }),
     []
@@ -92,6 +135,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
   const api = useMemo<ProjectApi>(
     () => ({
       state,
+      canUndo: historyCanUndo(history),
+      canRedo: historyCanRedo(history),
+      undo,
+      redo,
       importFiles,
       rename,
       remove,
@@ -101,6 +148,11 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       setOffset,
       setPlaybackSource,
       setMuted,
+      setMarkerColor,
+      addExportRange,
+      updateExportRange,
+      removeExportRange,
+      reorder,
       applySyncResults,
       clearSyncReport,
       loadProject,
@@ -110,6 +162,9 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
     }),
     [
       state,
+      history,
+      undo,
+      redo,
       importFiles,
       rename,
       remove,
@@ -119,6 +174,11 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       setOffset,
       setPlaybackSource,
       setMuted,
+      setMarkerColor,
+      addExportRange,
+      updateExportRange,
+      removeExportRange,
+      reorder,
       applySyncResults,
       clearSyncReport,
       loadProject,

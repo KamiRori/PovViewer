@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { ExportProgressDialog } from './components/ExportProgressDialog'
 import { PovGrid } from './components/PovGrid'
 import { TimelineBar } from './components/TimelineBar'
 import { Toolbar } from './components/Toolbar'
+import { planExportClips } from './export/planExport'
 import { FeaturePerfReporter } from './player/FeaturePerfReporter'
 import { usePlaybackArmActions } from './player/playbackArm'
 import { useViewUi } from './player/viewUi'
@@ -13,9 +15,26 @@ import { dataTransferHasFiles, pathsFromDroppedFiles } from './utils/dropFiles'
 import { fileNameFromPath } from './utils/playerName'
 import type { PlaybackSource } from './project/types'
 
+type ExportPhase = 'running' | 'confirm-cancel' | 'done' | 'aborted'
+
+interface ExportUiState {
+  open: boolean
+  total: number
+  completed: number
+  currentName: string
+  outputDir: string
+  ok: number
+  failed: number
+  phase: ExportPhase
+}
+
 export function App() {
   const {
     state,
+    canUndo,
+    canRedo,
+    undo,
+    redo,
     importFiles,
     rename,
     remove,
@@ -25,6 +44,11 @@ export function App() {
     setOffset,
     setPlaybackSource,
     setMuted,
+    setMarkerColor,
+    addExportRange,
+    updateExportRange,
+    removeExportRange,
+    reorder,
     applySyncResults,
     clearSyncReport,
     loadProject,
@@ -38,6 +62,18 @@ export function App() {
   const { toggle, resync } = playback
   const [busy, setBusy] = useState(false)
   const [proxyBusy, setProxyBusy] = useState(false)
+  const [exportBusy, setExportBusy] = useState(false)
+  const [exportUi, setExportUi] = useState<ExportUiState>({
+    open: false,
+    total: 0,
+    completed: 0,
+    currentName: '',
+    outputDir: '',
+    ok: 0,
+    failed: 0,
+    phase: 'running'
+  })
+  const exportAbortRef = useRef(false)
   const [proxyEpoch, setProxyEpoch] = useState(0)
   const [dragging, setDragging] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
@@ -51,51 +87,6 @@ export function App() {
       setHint(`正在生成网格预览代理（${completed}/${total}）${where}${detail}`)
     })
   }, [])
-
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target as HTMLElement | null
-      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT')) {
-        return
-      }
-
-      if (event.code === 'Space') {
-        event.preventDefault()
-        toggle()
-        return
-      }
-
-      if (event.key === 'Escape' && view.mode === 'focus') {
-        event.preventDefault()
-        view.exitFocus()
-        return
-      }
-
-      if (event.key === 'm' || event.key === 'M') {
-        event.preventDefault()
-        const targetId = view.mode === 'focus' ? view.focusId : view.activeId
-        if (!targetId) return
-        const target = state.povs.find((pov) => pov.id === targetId)
-        if (!target) return
-        setMuted(targetId, !target.muted)
-        return
-      }
-
-      if (event.key === 'f' || event.key === 'F') {
-        event.preventDefault()
-        if (view.mode === 'focus' && view.focusId) {
-          const node = document.querySelector('.pov-card.is-focus-main')
-          if (node instanceof HTMLElement) {
-            void (document.fullscreenElement ? document.exitFullscreen() : node.requestFullscreen())
-          }
-          return
-        }
-        if (view.activeId) view.enterFocus(view.activeId)
-      }
-    }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [setMuted, state.povs, toggle, view])
 
   useEffect(() => {
     const block = (event: DragEvent) => {
@@ -217,6 +208,87 @@ export function App() {
     }
   }
 
+  const saveProjectRef = useRef(onSaveProject)
+  const openProjectRef = useRef(onOpenProject)
+  saveProjectRef.current = onSaveProject
+  openProjectRef.current = onOpenProject
+
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target as HTMLElement | null
+      const typing =
+        target &&
+        (target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT' ||
+          target.isContentEditable)
+      const mod = event.ctrlKey || event.metaKey
+      const key = event.key.toLowerCase()
+
+      if (mod && key === 's') {
+        event.preventDefault()
+        if (!busy) void saveProjectRef.current()
+        return
+      }
+
+      if (mod && key === 'o') {
+        event.preventDefault()
+        if (!busy) void openProjectRef.current()
+        return
+      }
+
+      if (mod && key === 'z' && !event.shiftKey) {
+        event.preventDefault()
+        undo()
+        return
+      }
+
+      if ((mod && key === 'z' && event.shiftKey) || (mod && key === 'y')) {
+        event.preventDefault()
+        redo()
+        return
+      }
+
+      if (typing) return
+
+      if (event.code === 'Space') {
+        event.preventDefault()
+        toggle()
+        return
+      }
+
+      if (event.key === 'Escape' && view.mode === 'focus') {
+        event.preventDefault()
+        view.exitFocus()
+        return
+      }
+
+      if (event.key === 'm' || event.key === 'M') {
+        event.preventDefault()
+        const targetId = view.mode === 'focus' ? view.focusId : view.activeId
+        if (!targetId) return
+        const mutedTarget = state.povs.find((pov) => pov.id === targetId)
+        if (!mutedTarget) return
+        setMuted(targetId, !mutedTarget.muted)
+        return
+      }
+
+      if (event.key === 'f' || event.key === 'F') {
+        event.preventDefault()
+        if (view.mode === 'focus' && view.focusId) {
+          const node = document.querySelector('.pov-card.is-focus-main')
+          if (node instanceof HTMLElement) {
+            void (document.fullscreenElement ? document.exitFullscreen() : node.requestFullscreen())
+          }
+          return
+        }
+        if (view.activeId) view.enterFocus(view.activeId)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [busy, redo, setMuted, state.povs, toggle, undo, view])
+
   async function onLocateFile(id: string): Promise<void> {
     const pov = state.povs.find((entry) => entry.id === id)
     if (!pov) return
@@ -272,12 +344,153 @@ export function App() {
     }
   }
 
+  async function onExportSelections(): Promise<void> {
+    const plans = planExportClips(state.povs)
+    if (plans.length === 0) {
+      setHint('没有可导出的选区。请先在时间轴上为 POV 创建导出选区。')
+      return
+    }
+
+    let outputDir: string | null
+    try {
+      outputDir = await window.povApi.selectExportDirectory()
+    } catch (error) {
+      console.error('[export] select directory failed', error)
+      setHint('选择导出目录失败')
+      return
+    }
+    if (!outputDir) return
+
+    playback.pause()
+    exportAbortRef.current = false
+    setExportBusy(true)
+    setHint(null)
+    setExportUi({
+      open: true,
+      total: plans.length,
+      completed: 0,
+      currentName: plans[0]?.outputName ?? '',
+      outputDir,
+      ok: 0,
+      failed: 0,
+      phase: 'running'
+    })
+
+    let ok = 0
+    let failed = 0
+    let aborted = false
+
+    try {
+      await window.povApi.beginExportVideoClips()
+      for (const [index, plan] of plans.entries()) {
+        if (exportAbortRef.current) {
+          aborted = true
+          break
+        }
+        setExportUi((prev) => ({
+          ...prev,
+          currentName: plan.outputName,
+          completed: index,
+          ok,
+          failed,
+          phase: prev.phase === 'confirm-cancel' ? 'confirm-cancel' : 'running'
+        }))
+        try {
+          const result = await window.povApi.exportVideoClip({
+            sourcePath: plan.sourcePath,
+            outputDir,
+            outputName: plan.outputName,
+            videoStart: plan.videoStart,
+            videoEnd: plan.videoEnd
+          })
+          if (result.cancelled || exportAbortRef.current) {
+            aborted = true
+            break
+          }
+          ok += 1
+        } catch (error) {
+          if (exportAbortRef.current) {
+            aborted = true
+            break
+          }
+          console.error('[export] clip failed', plan.outputName, error)
+          failed += 1
+        }
+        setExportUi((prev) => ({
+          ...prev,
+          completed: index + 1,
+          ok,
+          failed,
+          phase: prev.phase === 'confirm-cancel' ? 'confirm-cancel' : 'running'
+        }))
+      }
+    } catch (error) {
+      console.error('[export] failed', error)
+      setExportBusy(false)
+      setExportUi((prev) => ({ ...prev, open: false, phase: 'done', currentName: '' }))
+      setHint(`导出失败${error instanceof Error ? `：${error.message}` : ''}`)
+      return
+    }
+
+    setExportBusy(false)
+    setExportUi((prev) => ({
+      ...prev,
+      open: false,
+      completed: aborted ? prev.completed : plans.length,
+      ok,
+      failed,
+      phase: aborted ? 'aborted' : 'done',
+      currentName: ''
+    }))
+    if (aborted) {
+      setHint(
+        `导出已终止：成功 ${ok}${failed > 0 ? `，失败 ${failed}` : ''} → ${outputDir}`
+      )
+    } else if (failed === 0) {
+      setHint(`导出完成：${ok} 个片段 → ${outputDir}`)
+    } else {
+      setHint(`导出结束：${ok} 成功，${failed} 失败 → ${outputDir}`)
+    }
+  }
+
+  function onExportRequestClose(): void {
+    setExportUi((prev) =>
+      prev.phase === 'running' || prev.phase === 'confirm-cancel'
+        ? { ...prev, phase: 'confirm-cancel' }
+        : prev
+    )
+  }
+
+  function onExportDismissConfirm(): void {
+    setExportUi((prev) =>
+      prev.phase === 'confirm-cancel' ? { ...prev, phase: 'running' } : prev
+    )
+  }
+
+  async function onExportConfirmCancel(): Promise<void> {
+    exportAbortRef.current = true
+    setExportUi((prev) => ({
+      ...prev,
+      phase: 'running',
+      currentName: '正在终止…'
+    }))
+    try {
+      await window.povApi.cancelExportVideoClip()
+    } catch (error) {
+      console.error('[export] cancel failed', error)
+    }
+  }
+
+  function onExportDismiss(): void {
+    setExportUi((prev) => ({ ...prev, open: false }))
+  }
+
   async function onImportSync(): Promise<void> {
     setBusy(true)
     setHint(null)
     clearSyncReport()
     try {
-      const filePath = await window.povApi.selectJsonFile('导入同步')
+      const filePath = await window.povApi.selectJsonFile('导入项目')
       if (!filePath) return
       const text = await window.povApi.readTextFile(filePath)
       const parsed = parseSyncJson(text)
@@ -290,7 +503,7 @@ export function App() {
       setHint(`已应用 ${parsed.results.length} 条同步数据`)
     } catch (error) {
       console.error('[sync] import failed', error)
-      setHint('导入 sync.json 失败')
+      setHint('导入项目失败')
     } finally {
       setBusy(false)
     }
@@ -376,8 +589,14 @@ export function App() {
           count={visible.length}
           busy={busy}
           query={view.query}
+          markerFilter={view.markerFilter}
           projectPath={state.projectPath}
           proxyBusy={proxyBusy}
+          exportBusy={exportBusy}
+          canUndo={canUndo}
+          canRedo={canRedo}
+          onUndo={undo}
+          onRedo={redo}
           onImportPov={() => {
             void onImportPov()
           }}
@@ -393,11 +612,15 @@ export function App() {
           onGenerateProxies={() => {
             void onGenerateProxies()
           }}
+          onExportSelections={() => {
+            void onExportSelections()
+          }}
           onColumns={setColumns}
           onOpenGpuDebug={() => {
             void window.povApi.openGpuDebug()
           }}
           onQuery={view.setQuery}
+          onMarkerFilter={view.setMarkerFilter}
         />
       </header>
       <FeaturePerfReporter playing={playback.state.playing} />
@@ -438,6 +661,8 @@ export function App() {
             onLocate={(id) => {
               void onLocateFile(id)
             }}
+            onReorder={reorder}
+            onMarkerColor={setMarkerColor}
           />
         )}
       </main>
@@ -454,8 +679,28 @@ export function App() {
         onCommitScrub={playback.commitScrub}
         onRate={playback.setRate}
         onResync={playback.resync}
+        onAddExportRange={addExportRange}
+        onUpdateExportRange={updateExportRange}
+        onRemoveExportRange={removeExportRange}
+        onReorder={reorder}
       />
       {dragging ? <div className="drop-overlay">松开以导入视频</div> : null}
+      <ExportProgressDialog
+        open={exportUi.open}
+        total={exportUi.total}
+        completed={exportUi.completed}
+        currentName={exportUi.currentName}
+        outputDir={exportUi.outputDir}
+        ok={exportUi.ok}
+        failed={exportUi.failed}
+        phase={exportUi.phase}
+        onRequestClose={onExportRequestClose}
+        onConfirmCancel={() => {
+          void onExportConfirmCancel()
+        }}
+        onDismissConfirm={onExportDismissConfirm}
+        onDismiss={onExportDismiss}
+      />
     </div>
   )
 }

@@ -11,6 +11,7 @@ import type { POVRuntime } from '../project/types'
 import { PLAYBACK_RATES, type PlaybackRate } from '../timeline/playbackMath'
 import { formatMasterTime } from '../timeline/timeFormat'
 import type { TimelineRange } from '../timeline/range'
+import type { TimelineSelection } from '../timeline/selection'
 import {
   clampViewport,
   fullViewport,
@@ -57,6 +58,10 @@ interface TimelineBarProps {
   onCommitScrub: () => void
   onRate: (rate: PlaybackRate) => void
   onResync: () => void
+  onAddExportRange: (id: string, range: TimelineSelection) => void
+  onUpdateExportRange: (id: string, selectionId: string, range: TimelineSelection) => void
+  onRemoveExportRange: (id: string, selectionId: string) => void
+  onReorder: (fromId: string, toId: string) => void
 }
 
 export function TimelineBar({
@@ -71,7 +76,11 @@ export function TimelineBar({
   onScrub,
   onCommitScrub,
   onRate,
-  onResync
+  onResync,
+  onAddExportRange,
+  onUpdateExportRange,
+  onRemoveExportRange,
+  onReorder
 }: TimelineBarProps) {
   const span = Math.max(range.duration, 0.001)
   const preview = usePreviewQuality()
@@ -147,9 +156,9 @@ export function TimelineBar({
     })
   }
 
-  const viewRange = viewportToRange(
+  const clampedViewport =
     range.duration > 0 ? clampViewport(viewport.start, viewport.end, range) : fullViewport(range)
-  )
+  const viewRange = viewportToRange(clampedViewport)
 
   return (
     <footer className="timeline-bar" style={{ height: panelHeight }}>
@@ -182,7 +191,7 @@ export function TimelineBar({
         masterTime={masterTime}
         range={viewRange}
         fullRange={range}
-        viewport={viewRange}
+        viewport={clampedViewport}
         disabled={disabled}
         activeId={view.activeId}
         onViewportChange={setViewport}
@@ -191,6 +200,10 @@ export function TimelineBar({
         onSelect={(id) => {
           view.setActiveId(id)
         }}
+        onAddExportRange={onAddExportRange}
+        onUpdateExportRange={onUpdateExportRange}
+        onRemoveExportRange={onRemoveExportRange}
+        onReorder={onReorder}
       />
 
       <div className="timeline-controls">
@@ -269,7 +282,7 @@ export function TimelineBar({
         >
           解码 {liveStats.live}/{liveStats.max} · 展示 {armedCount}
         </span>
-        <span className="preview-hint">单击选中 · 双击进入焦点</span>
+        <span className="preview-hint">拖动排序 · 单击选中 · 双击焦点</span>
       </div>
     </footer>
   )

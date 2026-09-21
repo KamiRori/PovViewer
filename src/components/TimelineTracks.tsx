@@ -1,8 +1,26 @@
-import { useCallback, useRef, type PointerEvent as ReactPointerEvent, type UIEvent } from 'react'
+import { useCallback, useEffect, useRef, useState, type DragEvent as ReactDragEvent, type PointerEvent as ReactPointerEvent, type UIEvent } from 'react'
 import { useArmedLookup } from '../player/playbackArm'
 import { useViewUi } from '../player/viewUi'
+import {
+  dataTransferHasPovId,
+  readPovDragId,
+  setPovDragData
+} from '../project/povDrag'
 import type { POVRuntime } from '../project/types'
 import type { TimelineRange } from '../timeline/range'
+import {
+  clampSelection,
+  collectSelectionSnapTargets,
+  constrainSelectionNoOverlap,
+  isTimeInsideSelection,
+  moveSelectionNoOverlap,
+  selectionSpan,
+  selectionWindowPercent,
+  snapMovedSelection,
+  snapTime,
+  type ExportSelection,
+  type TimelineSelection
+} from '../timeline/selection'
 import { formatMasterTime } from '../timeline/timeFormat'
 import { playheadPercent, timeFromRatio, trackSegmentLayout } from '../timeline/trackLayout'
 import type { TimelineViewport } from '../timeline/viewport'
@@ -21,7 +39,17 @@ interface TimelineTracksProps {
   onScrub: (time: number) => void
   onCommitScrub: () => void
   onSelect: (id: string) => void
+  onAddExportRange: (id: string, range: TimelineSelection) => void
+  onUpdateExportRange: (id: string, selectionId: string, range: TimelineSelection) => void
+  onRemoveExportRange: (id: string, selectionId: string) => void
+  onReorder: (fromId: string, toId: string) => void
 }
+
+type DragMode = 'scrub' | 'edge-start' | 'edge-end' | 'move'
+
+type ContextMenuState =
+  | { kind: 'track'; x: number; y: number; povId: string; time: number }
+  | { kind: 'selection'; x: number; y: number; povId: string; selectionId: string }
 
 function rulerMarks(range: TimelineRange): number[] {
   const span = Math.max(range.duration, 0.001)
@@ -31,6 +59,24 @@ function rulerMarks(range: TimelineRange): number[] {
     marks.push(range.start + (span * i) / steps)
   }
   return marks
+}
+
+function clampMenuPosition(x: number, y: number, width: number, height: number): { x: number; y: number } {
+  const pad = 8
+  const maxX = Math.max(pad, window.innerWidth - width - pad)
+  const maxY = Math.max(pad, window.innerHeight - height - pad)
+  return {
+    x: Math.min(maxX, Math.max(pad, x)),
+    y: Math.min(maxY, Math.max(pad, y))
+  }
+}
+
+/** Pixel threshold converted to master-timeline seconds for the visible window. */
+const SELECTION_SNAP_PX = 8
+
+function snapThresholdForWidth(width: number, visibleDuration: number): number {
+  if (!(width > 0)) return 0.25
+  return (SELECTION_SNAP_PX / width) * Math.max(visibleDuration, 0.001)
 }
 
 export function TimelineTracks({
@@ -44,56 +90,327 @@ export function TimelineTracks({
   onViewportChange,
   onScrub,
   onCommitScrub,
-  onSelect
+  onSelect,
+  onAddExportRange,
+  onUpdateExportRange,
+  onRemoveExportRange,
+  onReorder
 }: TimelineTracksProps) {
   const tracksRef = useRef<HTMLDivElement>(null)
   const labelsScrollRef = useRef<HTMLDivElement>(null)
   const tracksScrollRef = useRef<HTMLDivElement>(null)
+  const menuRef = useRef<HTMLDivElement>(null)
   const syncingScrollRef = useRef(false)
-  const draggingRef = useRef(false)
+  const [dragOverId, setDragOverId] = useState<string | null>(null)
+  const [draggingId, setDraggingId] = useState<string | null>(null)
+  const [contextMenu, setContextMenu] = useState<ContextMenuState | null>(null)
+  const [menuPos, setMenuPos] = useState({ x: 0, y: 0 })
+  const dragRef = useRef<{
+    mode: DragMode
+    pointerId: number
+    povId: string
+    selectionId: string
+    originX: number
+    originSelection: ExportSelection
+  } | null>(null)
   const isArmed = useArmedLookup()
   const view = useViewUi()
   const empty = range.duration <= 0 || povs.length === 0
   const headPct = empty ? 0 : Math.min(100, Math.max(0, playheadPercent(masterTime, range)))
   const marks = empty ? [] : rulerMarks(range)
+  const activePov = activeId ? povs.find((pov) => pov.id === activeId) ?? null : null
 
   function isShowing(id: string): boolean {
     if (isArmed(id)) return true
     return view.mode === 'focus' && view.focusId === id
   }
 
-  const scrubFromClientX = useCallback(
-    (clientX: number) => {
+  const timeAtClientX = useCallback(
+    (clientX: number): number => {
       const node = tracksRef.current
-      if (!node || empty) return
+      if (!node || empty) return masterTime
       const rect = node.getBoundingClientRect()
-      if (rect.width <= 0) return
-      onScrub(timeFromRatio((clientX - rect.left) / rect.width, range))
+      if (rect.width <= 0) return masterTime
+      return timeFromRatio((clientX - rect.left) / rect.width, range)
     },
-    [empty, onScrub, range]
+    [empty, masterTime, range]
   )
+
+  function resolvePovId(target: EventTarget | null): string | null {
+    if (target instanceof Element) {
+      const node = target.closest('[data-pov-id]')
+      const id = node?.getAttribute('data-pov-id')
+      if (id) return id
+    }
+    return activeId
+  }
+
+  function resolveSelectionId(target: EventTarget | null): string | null {
+    if (!(target instanceof Element)) return null
+    const node = target.closest('[data-selection-id]')
+    return node?.getAttribute('data-selection-id') ?? null
+  }
+
+  /** Prefer the lane under the pointer; fall back to the active track. */
+  function resolvePovIdAtClientY(clientY: number): string | null {
+    const root = tracksRef.current
+    if (root) {
+      const lanes = root.querySelectorAll<HTMLElement>('.timeline-lane-track[data-pov-id]')
+      for (const lane of lanes) {
+        const rect = lane.getBoundingClientRect()
+        if (clientY >= rect.top && clientY < rect.bottom) {
+          return lane.getAttribute('data-pov-id')
+        }
+      }
+    }
+    return activeId
+  }
+
+  function snapExtrasForPov(pov: POVRuntime): number[] {
+    const extras = [masterTime, fullRange.start, fullRange.end]
+    if (pov.metadataReady && pov.duration > 0) {
+      extras.push(pov.offset, pov.offset + pov.duration)
+    }
+    return extras
+  }
+
+  function resolveMode(target: EventTarget | null): DragMode | null {
+    if (!(target instanceof Element)) return null
+    if (target.closest('.timeline-playhead')) return 'scrub'
+    if (target.closest('.timeline-selection-handle.is-start')) return 'edge-start'
+    if (target.closest('.timeline-selection-handle.is-end')) return 'edge-end'
+    if (target.closest('.timeline-selection')) return 'move'
+    return null
+  }
+
+  function closeContextMenu(): void {
+    setContextMenu(null)
+  }
+
+  useEffect(() => {
+    if (!contextMenu) return
+    const frame = requestAnimationFrame(() => {
+      const node = menuRef.current
+      if (!node) {
+        setMenuPos({ x: contextMenu.x, y: contextMenu.y })
+        return
+      }
+      const rect = node.getBoundingClientRect()
+      setMenuPos(clampMenuPosition(contextMenu.x, contextMenu.y, rect.width, rect.height))
+    })
+    return () => cancelAnimationFrame(frame)
+  }, [contextMenu])
+
+  useEffect(() => {
+    if (!contextMenu) return
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') closeContextMenu()
+    }
+    function onPointerDown(event: PointerEvent): void {
+      const node = menuRef.current
+      if (node && event.target instanceof Node && node.contains(event.target)) return
+      closeContextMenu()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    window.addEventListener('pointerdown', onPointerDown, true)
+    return () => {
+      window.removeEventListener('keydown', onKeyDown)
+      window.removeEventListener('pointerdown', onPointerDown, true)
+    }
+  }, [contextMenu])
 
   function onPointerDown(event: ReactPointerEvent<HTMLDivElement>): void {
     if (disabled || empty || event.button !== 0) return
     const target = event.target as HTMLElement | null
-    if (target?.closest('button')) return
-    draggingRef.current = true
+    if (target?.closest('button') || target?.closest('.timeline-context-menu')) return
+    closeContextMenu()
+
+    const mode = resolveMode(event.target)
+    const time = timeAtClientX(event.clientX)
+
+    // Playhead drag, or left-click empty track/ruler → jump / scrub.
+    if (mode === 'scrub' || mode === null) {
+      const povId = resolvePovId(event.target)
+      if (povId) onSelect(povId)
+      dragRef.current = {
+        mode: 'scrub',
+        pointerId: event.pointerId,
+        povId: povId ?? activeId ?? '',
+        selectionId: '',
+        originX: event.clientX,
+        originSelection: { id: '', start: time, end: time }
+      }
+      event.currentTarget.setPointerCapture(event.pointerId)
+      onScrub(time)
+      return
+    }
+
+    const povId = resolvePovId(event.target)
+    if (!povId) return
+    onSelect(povId)
+
+    const selectionId = resolveSelectionId(event.target)
+    if (!selectionId) return
+    const pov = povs.find((entry) => entry.id === povId)
+    const selection = pov?.exportRanges.find((entry) => entry.id === selectionId)
+    if (!selection) return
+
+    dragRef.current = {
+      mode,
+      pointerId: event.pointerId,
+      povId,
+      selectionId,
+      originX: event.clientX,
+      originSelection: selection
+    }
     event.currentTarget.setPointerCapture(event.pointerId)
-    scrubFromClientX(event.clientX)
   }
 
   function onPointerMove(event: ReactPointerEvent<HTMLDivElement>): void {
-    if (!draggingRef.current) return
-    scrubFromClientX(event.clientX)
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    const time = timeAtClientX(event.clientX)
+
+    if (drag.mode === 'scrub') {
+      onScrub(time)
+      return
+    }
+
+    if (drag.mode === 'edge-start') {
+      const pov = povs.find((entry) => entry.id === drag.povId)
+      if (!pov) return
+      const width = tracksRef.current?.getBoundingClientRect().width ?? 0
+      const threshold = snapThresholdForWidth(width, range.duration)
+      const targets = collectSelectionSnapTargets(
+        pov.exportRanges,
+        drag.selectionId,
+        snapExtrasForPov(pov)
+      )
+      const snapped = snapTime(time, targets, threshold)
+      onUpdateExportRange(
+        drag.povId,
+        drag.selectionId,
+        constrainSelectionNoOverlap(
+          { start: snapped, end: drag.originSelection.end },
+          drag.originSelection,
+          pov.exportRanges,
+          drag.selectionId,
+          fullRange
+        )
+      )
+      return
+    }
+
+    if (drag.mode === 'edge-end') {
+      const pov = povs.find((entry) => entry.id === drag.povId)
+      if (!pov) return
+      const width = tracksRef.current?.getBoundingClientRect().width ?? 0
+      const threshold = snapThresholdForWidth(width, range.duration)
+      const targets = collectSelectionSnapTargets(
+        pov.exportRanges,
+        drag.selectionId,
+        snapExtrasForPov(pov)
+      )
+      const snapped = snapTime(time, targets, threshold)
+      onUpdateExportRange(
+        drag.povId,
+        drag.selectionId,
+        constrainSelectionNoOverlap(
+          { start: drag.originSelection.start, end: snapped },
+          drag.originSelection,
+          pov.exportRanges,
+          drag.selectionId,
+          fullRange
+        )
+      )
+      return
+    }
+
+    if (drag.mode === 'move') {
+      const node = tracksRef.current
+      if (!node) return
+      const width = node.getBoundingClientRect().width
+      if (width <= 0) return
+      const pov = povs.find((entry) => entry.id === drag.povId)
+      if (!pov) return
+      const delta =
+        ((event.clientX - drag.originX) / width) * Math.max(range.duration, 0.001)
+      const moved = moveSelectionNoOverlap(
+        drag.originSelection,
+        delta,
+        pov.exportRanges,
+        fullRange
+      )
+      const threshold = snapThresholdForWidth(width, range.duration)
+      const targets = collectSelectionSnapTargets(
+        pov.exportRanges,
+        drag.selectionId,
+        snapExtrasForPov(pov)
+      )
+      const snapped = snapMovedSelection(moved, targets, threshold)
+      onUpdateExportRange(
+        drag.povId,
+        drag.selectionId,
+        constrainSelectionNoOverlap(
+          snapped,
+          drag.originSelection,
+          pov.exportRanges,
+          drag.selectionId,
+          fullRange
+        )
+      )
+    }
   }
 
   function endDrag(event: ReactPointerEvent<HTMLDivElement>): void {
-    if (!draggingRef.current) return
-    draggingRef.current = false
+    const drag = dragRef.current
+    if (!drag || drag.pointerId !== event.pointerId) return
+    dragRef.current = null
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
-    onCommitScrub()
+    if (drag.mode === 'scrub') onCommitScrub()
+  }
+
+  function onTrackContextMenu(event: React.MouseEvent<HTMLDivElement>): void {
+    if (disabled || empty) return
+    const target = event.target as HTMLElement | null
+    if (target?.closest('.timeline-selection')) return
+
+    const onPlayhead = Boolean(target?.closest('.timeline-playhead'))
+    const povId = onPlayhead
+      ? resolvePovIdAtClientY(event.clientY)
+      : resolvePovId(event.target)
+    if (!povId) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    onSelect(povId)
+    setContextMenu({
+      kind: 'track',
+      x: event.clientX,
+      y: event.clientY,
+      povId,
+      time: onPlayhead ? masterTime : timeAtClientX(event.clientX)
+    })
+  }
+
+  function onSelectionContextMenu(
+    event: React.MouseEvent<HTMLDivElement>,
+    povId: string,
+    selectionId: string
+  ): void {
+    if (disabled) return
+    event.preventDefault()
+    event.stopPropagation()
+    onSelect(povId)
+    setContextMenu({
+      kind: 'selection',
+      x: event.clientX,
+      y: event.clientY,
+      povId,
+      selectionId
+    })
   }
 
   function syncScroll(source: 'labels' | 'tracks', event: UIEvent<HTMLDivElement>): void {
@@ -105,11 +422,28 @@ export function TimelineTracks({
     syncingScrollRef.current = false
   }
 
+  const selectionCount = activePov?.exportRanges.length ?? 0
+  const selectionHint =
+    selectionCount > 0
+      ? `${activePov!.playerName} 已有 ${selectionCount} 个导出区间 · 左键定位 · 右键轨道/播放头创建 · 右键区间移除`
+      : activeId
+        ? '左键点击/拖播放头定位 · 右键轨道创建导出区间 · 同轴不可重叠'
+        : '左键定位时间 · 选中卡片后右键轨道可创建导出区间'
+
+  const menuPov =
+    contextMenu?.kind === 'track'
+      ? povs.find((pov) => pov.id === contextMenu.povId) ?? null
+      : null
+  const canCreateAtMenu =
+    contextMenu?.kind === 'track' && menuPov
+      ? !isTimeInsideSelection(contextMenu.time, menuPov.exportRanges)
+      : false
+
   return (
     <section className={`timeline-tracks${disabled || empty ? ' is-disabled' : ''}`} aria-label="全部卡片时间轴">
       <div className="timeline-tracks-header">
         <span className="timeline-tracks-title">卡片时间轴</span>
-        <span className="timeline-zoom-hint">复合条：拖中间平移 · 拉两端缩放 · 点空白定位</span>
+        <span className="timeline-zoom-hint">{selectionHint}</span>
         <TimelineZoomResetButton
           disabled={disabled}
           fullRange={fullRange}
@@ -133,17 +467,58 @@ export function TimelineTracks({
               <div className="timeline-lane-labels">
                 <div className="timeline-lane-label-spacer" aria-hidden />
                 {povs.map((pov) => (
-                  <button
+                  <div
                     key={pov.id}
-                    type="button"
+                    role="button"
+                    tabIndex={0}
                     className={`timeline-lane-label${pov.id === activeId ? ' is-active' : ''}${
                       isShowing(pov.id) ? '' : ' is-idle'
+                    }${draggingId === pov.id ? ' is-dragging' : ''}${
+                      dragOverId === pov.id ? ' is-drag-over' : ''
                     }`}
-                    title={pov.filePath}
+                    title={`${pov.playerName} · 拖动调整排序`}
+                    draggable={!disabled}
                     onClick={() => onSelect(pov.id)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter' || event.key === ' ') {
+                        event.preventDefault()
+                        onSelect(pov.id)
+                      }
+                    }}
+                    onDragStart={(event: ReactDragEvent<HTMLDivElement>) => {
+                      if (disabled) {
+                        event.preventDefault()
+                        return
+                      }
+                      setPovDragData(event.dataTransfer, pov.id)
+                      setDraggingId(pov.id)
+                      setDragOverId(null)
+                    }}
+                    onDragEnd={() => {
+                      setDraggingId(null)
+                      setDragOverId(null)
+                    }}
+                    onDragOver={(event: ReactDragEvent<HTMLDivElement>) => {
+                      if (disabled || !dataTransferHasPovId(event.dataTransfer)) return
+                      event.preventDefault()
+                      event.dataTransfer.dropEffect = 'move'
+                      if (draggingId !== pov.id) setDragOverId(pov.id)
+                    }}
+                    onDragLeave={(event: ReactDragEvent<HTMLDivElement>) => {
+                      if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+                      setDragOverId((current) => (current === pov.id ? null : current))
+                    }}
+                    onDrop={(event: ReactDragEvent<HTMLDivElement>) => {
+                      if (disabled || !dataTransferHasPovId(event.dataTransfer)) return
+                      event.preventDefault()
+                      setDragOverId(null)
+                      const fromId = readPovDragId(event.dataTransfer)
+                      if (!fromId || fromId === pov.id) return
+                      onReorder(fromId, pov.id)
+                    }}
                   >
                     {pov.playerName}
-                  </button>
+                  </div>
                 ))}
               </div>
             </div>
@@ -179,6 +554,7 @@ export function TimelineTracks({
                 onPointerMove={onPointerMove}
                 onPointerUp={endDrag}
                 onPointerCancel={endDrag}
+                onContextMenu={onTrackContextMenu}
               >
                 <div className="timeline-ruler-scale" aria-hidden>
                   {marks.map((mark, index) => {
@@ -197,8 +573,12 @@ export function TimelineTracks({
                   })}
                 </div>
 
-                <div className="timeline-playhead" style={{ left: `${headPct}%` }} aria-hidden>
-                  <span className="timeline-playhead-cap" />
+                <div
+                  className="timeline-playhead"
+                  style={{ left: `${headPct}%` }}
+                  title={`播放头 ${formatMasterTime(masterTime)}（左键拖拽或点击轨道定位 · 右键创建选区）`}
+                >
+                  <span className="timeline-playhead-cap" aria-hidden />
                 </div>
 
                 {povs.map((pov) => {
@@ -213,7 +593,47 @@ export function TimelineTracks({
                       className={`timeline-lane-track${pov.id === activeId ? ' is-active' : ''}${
                         pov.missing ? ' is-missing' : ''
                       }${showing ? ' is-showing' : ' is-idle'}`}
+                      data-pov-id={pov.id}
                     >
+                      {pov.exportRanges.map((selection) => {
+                        const selPct = selectionWindowPercent(selection, range)
+                        return (
+                          <div
+                            key={selection.id}
+                            className={`timeline-selection${
+                              selectionSpan(selection) <= 0 ? ' is-zero' : ''
+                            }${pov.id === activeId ? ' is-focused' : ''}${
+                              pov.markerColor ? ` marker-${pov.markerColor}` : ' marker-default'
+                            }`}
+                            data-pov-id={pov.id}
+                            data-selection-id={selection.id}
+                            data-marker={pov.markerColor ?? 'default'}
+                            style={{
+                              left: `${selPct.leftPct}%`,
+                              width: `${selPct.widthPct}%`
+                            }}
+                            title={`${pov.playerName} 导出区间 ${formatMasterTime(selection.start)} – ${formatMasterTime(selection.end)}`}
+                            onContextMenu={(event) =>
+                              onSelectionContextMenu(event, pov.id, selection.id)
+                            }
+                          >
+                            <span className="timeline-selection-cap is-start" aria-hidden />
+                            <span className="timeline-selection-cap is-end" aria-hidden />
+                            <span
+                              className="timeline-selection-handle is-start"
+                              data-pov-id={pov.id}
+                              data-selection-id={selection.id}
+                              title="拖动修改入点"
+                            />
+                            <span
+                              className="timeline-selection-handle is-end"
+                              data-pov-id={pov.id}
+                              data-selection-id={selection.id}
+                              title="拖动修改出点"
+                            />
+                          </div>
+                        )
+                      })}
                       {ready ? (
                         <>
                           <div
@@ -249,6 +669,48 @@ export function TimelineTracks({
           )}
         </div>
       </div>
+
+      {contextMenu ? (
+        <div
+          ref={menuRef}
+          className="timeline-context-menu"
+          style={{ left: menuPos.x, top: menuPos.y }}
+          role="menu"
+        >
+          {contextMenu.kind === 'track' ? (
+            <button
+              type="button"
+              className="timeline-context-menu-item"
+              role="menuitem"
+              disabled={!canCreateAtMenu}
+              title={canCreateAtMenu ? undefined : '此处已有导出区间，不能重叠创建'}
+              onClick={() => {
+                if (!canCreateAtMenu) return
+                const time = clampSelection(
+                  { start: contextMenu.time, end: contextMenu.time },
+                  fullRange
+                )
+                onAddExportRange(contextMenu.povId, time)
+                closeContextMenu()
+              }}
+            >
+              创建导出区间
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="timeline-context-menu-item is-danger"
+              role="menuitem"
+              onClick={() => {
+                onRemoveExportRange(contextMenu.povId, contextMenu.selectionId)
+                closeContextMenu()
+              }}
+            >
+              移除导出区间
+            </button>
+          )}
+        </div>
+      ) : null}
     </section>
   )
 }

@@ -18,6 +18,8 @@ describe('importPovPaths', () => {
       metadataReady: false,
       missing: false
     })
+    expect(added[0].exportRanges).toEqual([])
+    expect(added[0].markerColor).toBeNull()
     expect(added[1].playerName).toBe('Alice (2)')
     expect(added[0].id).not.toBe(added[1].id)
   })
@@ -40,6 +42,8 @@ describe('importPovPaths', () => {
         enabled: true,
         muted: true,
         playbackSource: 'original',
+        markerColor: null,
+        exportRanges: [],
         metadataReady: false,
         missing: false
       }

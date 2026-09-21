@@ -2,6 +2,7 @@ import {
   useEffect,
   useRef,
   useState,
+  type DragEvent as ReactDragEvent,
   type KeyboardEvent as ReactKeyboardEvent,
   type MouseEvent
 } from 'react'
@@ -9,6 +10,16 @@ import { shouldMutePov } from '../player/audioPolicy'
 import { usePlaybackArm } from '../player/playbackArm'
 import { VideoSurface } from '../player/VideoSurface'
 import { useViewUi } from '../player/viewUi'
+import {
+  dataTransferHasPovId,
+  readPovDragId,
+  setPovDragData
+} from '../project/povDrag'
+import {
+  MARKER_COLORS,
+  MARKER_COLOR_LABELS,
+  type MarkerColor
+} from '../project/markerColor'
 import type { PlaybackSource, POVRuntime } from '../project/types'
 import {
   expectedVideoTime,
@@ -35,6 +46,8 @@ interface PovCardProps {
   onDuration: (id: string, duration: number) => void
   onToggleMute: (id: string) => void
   onLocate: (id: string) => void
+  onReorder?: (fromId: string, toId: string) => void
+  onMarkerColor: (id: string, markerColor: MarkerColor | null) => void
 }
 
 async function resolveOriginalUrl(filePath: string): Promise<string> {
@@ -63,7 +76,9 @@ export function PovCard({
   onRemove,
   onDuration,
   onToggleMute,
-  onLocate
+  onLocate,
+  onReorder,
+  onMarkerColor
 }: PovCardProps) {
   const view = useViewUi()
   const { armed, setArmed } = usePlaybackArm(pov.id)
@@ -76,6 +91,11 @@ export function PovCard({
   const [proxyMissing, setProxyMissing] = useState(false)
   const [draft, setDraft] = useState(pov.playerName)
   const [offsetDraft, setOffsetDraft] = useState(String(pov.offset))
+  const [dragOver, setDragOver] = useState(false)
+  const [draggingSelf, setDraggingSelf] = useState(false)
+  const [markerOpen, setMarkerOpen] = useState(false)
+  const markerRef = useRef<HTMLDivElement>(null)
+  const canReorder = Boolean(onReorder) && variant !== 'focus-main'
   const fileName = fileNameFromPath(pov.filePath)
   const status = povPlaybackStatus(masterTime, pov.offset, pov.duration, pov.metadataReady)
   const videoTime = expectedVideoTime(masterTime, pov.offset)
@@ -89,6 +109,26 @@ export function PovCard({
   useEffect(() => {
     setOffsetDraft(String(pov.offset))
   }, [pov.offset])
+
+  useEffect(() => {
+    if (!markerOpen) return
+    function onPointerDown(event: PointerEvent): void {
+      const node = markerRef.current
+      if (!node) return
+      if (event.target instanceof Node && !node.contains(event.target)) {
+        setMarkerOpen(false)
+      }
+    }
+    function onKeyDown(event: KeyboardEvent): void {
+      if (event.key === 'Escape') setMarkerOpen(false)
+    }
+    window.addEventListener('pointerdown', onPointerDown)
+    window.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.removeEventListener('pointerdown', onPointerDown)
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [markerOpen])
 
   useEffect(() => {
     mediaUrlRef.current = mediaUrl
@@ -269,10 +309,63 @@ export function PovCard({
     effectiveArmed ? 'is-armed' : '',
     view.activeId === pov.id ? 'is-highlighted' : '',
     variant === 'focus-main' ? 'is-focus-main' : '',
-    variant === 'focus-rail' ? 'is-focus-rail' : ''
+    variant === 'focus-rail' ? 'is-focus-rail' : '',
+    canReorder ? 'is-reorderable' : '',
+    draggingSelf ? 'is-dragging' : '',
+    dragOver ? 'is-drag-over' : '',
+    pov.markerColor ? `has-marker marker-${pov.markerColor}` : ''
   ]
     .filter(Boolean)
     .join(' ')
+
+  function isInteractiveDragTarget(target: EventTarget | null): boolean {
+    return target instanceof Element
+      ? Boolean(target.closest('input, button, select, textarea, a, label'))
+      : false
+  }
+
+  function onCardDragStart(event: ReactDragEvent<HTMLElement>): void {
+    if (!canReorder || !onReorder) {
+      event.preventDefault()
+      return
+    }
+    if (isInteractiveDragTarget(event.target)) {
+      event.preventDefault()
+      return
+    }
+    setPovDragData(event.dataTransfer, pov.id)
+    setDraggingSelf(true)
+    setDragOver(false)
+  }
+
+  function onCardDragEnd(): void {
+    setDraggingSelf(false)
+    setDragOver(false)
+  }
+
+  function onCardDragOver(event: ReactDragEvent<HTMLElement>): void {
+    if (!canReorder || !onReorder || !dataTransferHasPovId(event.dataTransfer)) return
+    event.preventDefault()
+    event.stopPropagation()
+    event.dataTransfer.dropEffect = 'move'
+    if (!draggingSelf) setDragOver(true)
+  }
+
+  function onCardDragLeave(event: ReactDragEvent<HTMLElement>): void {
+    if (event.currentTarget.contains(event.relatedTarget as Node | null)) return
+    setDragOver(false)
+  }
+
+  function onCardDrop(event: ReactDragEvent<HTMLElement>): void {
+    if (!canReorder || !onReorder) return
+    if (!dataTransferHasPovId(event.dataTransfer)) return
+    event.preventDefault()
+    event.stopPropagation()
+    setDragOver(false)
+    const fromId = readPovDragId(event.dataTransfer)
+    if (!fromId || fromId === pov.id) return
+    onReorder(fromId, pov.id)
+  }
 
   return (
     <article
@@ -282,11 +375,21 @@ export function PovCard({
       data-highlighted={view.activeId === pov.id ? 'true' : 'false'}
       role="button"
       aria-pressed={view.activeId === pov.id}
-      title="单击选中 · 双击进入焦点"
+      title={
+        canReorder
+          ? '拖动调整排序 · 单击选中 · 双击进入焦点'
+          : '单击选中 · 双击进入焦点'
+      }
       tabIndex={0}
+      draggable={canReorder}
       onClick={onCardClick}
       onDoubleClick={onCardDoubleClick}
       onKeyDown={onCardKeyDown}
+      onDragStart={onCardDragStart}
+      onDragEnd={onCardDragEnd}
+      onDragOver={onCardDragOver}
+      onDragLeave={onCardDragLeave}
+      onDrop={onCardDrop}
     >
       <div className="pov-frame">
         {pov.missing ? (
@@ -300,7 +403,10 @@ export function PovCard({
             </button>
           </div>
         ) : proxyMissing ? (
-          <p className="pov-placeholder">代理未生成</p>
+          <div className="pov-placeholder pov-proxy-missing">
+            <p className="pov-placeholder-title">代理未生成</p>
+            <p className="pov-placeholder-hint">请前往「工具 → 生成预览代理」</p>
+          </div>
         ) : unplayable ? (
           <p className="pov-placeholder">无法播放</p>
         ) : mediaUrl ? (
@@ -459,6 +565,67 @@ export function PovCard({
         >
           移除
         </button>
+        <div
+          className={`pov-marker-picker${markerOpen ? ' is-open' : ''}`}
+          ref={markerRef}
+          onClick={(event) => event.stopPropagation()}
+          onPointerDown={(event) => event.stopPropagation()}
+        >
+          <button
+            type="button"
+            className={`pov-marker-trigger${pov.markerColor ? ` marker-${pov.markerColor}` : ''}`}
+            title={
+              pov.markerColor
+                ? `颜色标记：${MARKER_COLOR_LABELS[pov.markerColor]}（点击更换）`
+                : '设置颜色标记'
+            }
+            aria-label="颜色标记"
+            aria-expanded={markerOpen}
+            aria-haspopup="true"
+            onClick={(event) => {
+              event.stopPropagation()
+              setMarkerOpen((open) => !open)
+            }}
+          >
+            <span className="pov-marker-trigger-dot" aria-hidden />
+          </button>
+          {markerOpen ? (
+            <div className="pov-marker-panel" role="menu" aria-label="选择颜色标记">
+              {MARKER_COLORS.map((color) => (
+                <button
+                  key={color}
+                  type="button"
+                  role="menuitemradio"
+                  className={`pov-marker-swatch marker-${color}${
+                    pov.markerColor === color ? ' is-active' : ''
+                  }`}
+                  title={MARKER_COLOR_LABELS[color]}
+                  aria-label={MARKER_COLOR_LABELS[color]}
+                  aria-checked={pov.markerColor === color}
+                  onClick={(event) => {
+                    event.stopPropagation()
+                    onMarkerColor(pov.id, color)
+                    setMarkerOpen(false)
+                  }}
+                />
+              ))}
+              <button
+                type="button"
+                role="menuitem"
+                className="pov-marker-clear"
+                disabled={!pov.markerColor}
+                title="清除颜色标记"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  onMarkerColor(pov.id, null)
+                  setMarkerOpen(false)
+                }}
+              >
+                清除
+              </button>
+            </div>
+          ) : null}
+        </div>
       </div>
     </article>
   )

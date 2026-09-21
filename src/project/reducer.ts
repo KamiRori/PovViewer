@@ -1,5 +1,13 @@
 import type { ColumnCount, PlaybackSource, POVRuntime } from './types'
+import {
+  createExportSelection,
+  constrainSelectionNoOverlap,
+  isTimeInsideSelection,
+  type TimelineSelection
+} from '../timeline/selection'
+import type { MarkerColor } from './markerColor'
 import { importPovPaths } from './importPov'
+import { reorderPovsById } from './reorderPovs'
 import { applySync } from '../sync/applySync'
 import type { SyncResult } from '../sync/types'
 import { pathIdentity } from '../utils/playerName'
@@ -28,6 +36,11 @@ export type ProjectAction =
   | { type: 'setOffset'; id: string; offset: number }
   | { type: 'setPlaybackSource'; id: string; playbackSource: PlaybackSource }
   | { type: 'setMuted'; id: string; muted: boolean }
+  | { type: 'setMarkerColor'; id: string; markerColor: MarkerColor | null }
+  | { type: 'addExportRange'; id: string; range: TimelineSelection }
+  | { type: 'updateExportRange'; id: string; selectionId: string; range: TimelineSelection }
+  | { type: 'removeExportRange'; id: string; selectionId: string }
+  | { type: 'reorder'; fromId: string; toId: string }
   | { type: 'applySync'; results: SyncResult[] }
   | { type: 'clearSyncReport' }
   | { type: 'loadProject'; povs: POVRuntime[]; projectPath: string | null }
@@ -108,6 +121,73 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
           pov.id === action.id ? { ...pov, muted: action.muted } : pov
         )
       }
+    case 'setMarkerColor':
+      return {
+        ...state,
+        povs: state.povs.map((pov) =>
+          pov.id === action.id ? { ...pov, markerColor: action.markerColor } : pov
+        )
+      }
+    case 'addExportRange':
+      return {
+        ...state,
+        povs: state.povs.map((pov) => {
+          if (pov.id !== action.id) return pov
+          if (isTimeInsideSelection(action.range.start, pov.exportRanges)) return pov
+          if (isTimeInsideSelection(action.range.end, pov.exportRanges)) return pov
+          const created = createExportSelection(action.range.start, action.range.end)
+          const overlaps = pov.exportRanges.some(
+            (existing) => created.start < existing.end && existing.start < created.end
+          )
+          if (overlaps) return pov
+          return { ...pov, exportRanges: [...pov.exportRanges, created] }
+        })
+      }
+    case 'updateExportRange':
+      return {
+        ...state,
+        povs: state.povs.map((pov) => {
+          if (pov.id !== action.id) return pov
+          const origin = pov.exportRanges.find(
+            (selection) => selection.id === action.selectionId
+          )
+          if (!origin) return pov
+          const wideRange = { start: -1e12, end: 1e12, duration: 2e12 }
+          const next = constrainSelectionNoOverlap(
+            action.range,
+            origin,
+            pov.exportRanges,
+            action.selectionId,
+            wideRange
+          )
+          return {
+            ...pov,
+            exportRanges: pov.exportRanges.map((selection) =>
+              selection.id === action.selectionId
+                ? { ...selection, start: next.start, end: next.end }
+                : selection
+            )
+          }
+        })
+      }
+    case 'removeExportRange':
+      return {
+        ...state,
+        povs: state.povs.map((pov) =>
+          pov.id === action.id
+            ? {
+                ...pov,
+                exportRanges: pov.exportRanges.filter(
+                  (selection) => selection.id !== action.selectionId
+                )
+              }
+            : pov
+        )
+      }
+    case 'reorder': {
+      const povs = reorderPovsById(state.povs, action.fromId, action.toId)
+      return povs === state.povs ? state : { ...state, povs }
+    }
     case 'applySync': {
       const report = applySync(state.povs, action.results)
       return {

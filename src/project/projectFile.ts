@@ -1,5 +1,12 @@
 import { computeTimelineRange } from '../timeline/range'
 import {
+  isTimelineSelection,
+  parseExportRanges,
+  type ExportSelection,
+  type TimelineSelection
+} from '../timeline/selection'
+import { isMarkerColor, parseMarkerColor, type MarkerColor } from './markerColor'
+import {
   DEFAULT_PLAYBACK_SOURCE,
   isPlaybackSource,
   type POV,
@@ -16,6 +23,12 @@ export interface ProjectFilePovV1 {
   muted: boolean
   /** Optional for older project.json files. */
   playbackSource?: PlaybackSource
+  /** Optional color tag. */
+  markerColor?: MarkerColor | null
+  /** Current: multiple export ranges. */
+  exportRanges?: ExportSelection[]
+  /** Legacy single range; migrated on load. */
+  exportRange?: TimelineSelection | null
 }
 
 export interface ProjectFileV1 {
@@ -40,7 +53,9 @@ export function serializeProject(povs: readonly POVRuntime[]): ProjectFileV1 {
       offset: pov.offset,
       enabled: pov.enabled,
       muted: pov.muted,
-      playbackSource: pov.playbackSource
+      playbackSource: pov.playbackSource,
+      ...(pov.markerColor ? { markerColor: pov.markerColor } : {}),
+      ...(pov.exportRanges.length > 0 ? { exportRanges: pov.exportRanges } : {})
     }))
   }
 }
@@ -75,6 +90,31 @@ function asPovEntry(entry: unknown, index: number): ProjectFilePovV1 | string {
   if (item.playbackSource !== undefined && !isPlaybackSource(item.playbackSource)) {
     return `povs[${index}].playbackSource 无效`
   }
+  if (
+    item.markerColor !== undefined &&
+    item.markerColor !== null &&
+    !isMarkerColor(item.markerColor)
+  ) {
+    return `povs[${index}].markerColor 无效`
+  }
+  if (item.exportRanges !== undefined) {
+    if (!Array.isArray(item.exportRanges)) {
+      return `povs[${index}].exportRanges 无效`
+    }
+    for (const [rangeIndex, range] of item.exportRanges.entries()) {
+      if (!isTimelineSelection(range)) {
+        return `povs[${index}].exportRanges[${rangeIndex}] 无效`
+      }
+    }
+  }
+  if (
+    item.exportRange !== undefined &&
+    item.exportRange !== null &&
+    !isTimelineSelection(item.exportRange)
+  ) {
+    return `povs[${index}].exportRange 无效`
+  }
+  const exportRanges = parseExportRanges(item.exportRanges, item.exportRange)
   return {
     id: item.id,
     playerName: item.playerName,
@@ -82,7 +122,9 @@ function asPovEntry(entry: unknown, index: number): ProjectFilePovV1 | string {
     offset: item.offset,
     enabled: item.enabled,
     muted: item.muted,
-    playbackSource: isPlaybackSource(item.playbackSource) ? item.playbackSource : undefined
+    playbackSource: isPlaybackSource(item.playbackSource) ? item.playbackSource : undefined,
+    markerColor: parseMarkerColor(item.markerColor),
+    exportRanges
   }
 }
 
@@ -96,7 +138,9 @@ export function toRuntimePov(entry: ProjectFilePovV1, missing = false): POVRunti
     offset: entry.offset,
     enabled: entry.enabled,
     muted: entry.muted,
-    playbackSource: entry.playbackSource ?? DEFAULT_PLAYBACK_SOURCE
+    playbackSource: entry.playbackSource ?? DEFAULT_PLAYBACK_SOURCE,
+    markerColor: entry.markerColor ?? null,
+    exportRanges: entry.exportRanges ?? []
   }
   return {
     ...pov,

@@ -6,6 +6,7 @@ import {
   useState,
   type ReactNode
 } from 'react'
+import type { MarkerFilter } from '../project/markerColor'
 import type { ViewMode } from './audioPolicy'
 
 interface ViewUiApi {
@@ -14,10 +15,12 @@ interface ViewUiApi {
   /** Last card interacted with — keyboard M/F target in grid; no visual chrome. */
   activeId: string | null
   query: string
+  markerFilter: MarkerFilter
   enterFocus: (id: string) => void
   exitFocus: () => void
   setActiveId: (id: string | null) => void
   setQuery: (query: string) => void
+  setMarkerFilter: (filter: MarkerFilter) => void
 }
 
 const ViewUiContext = createContext<ViewUiApi | null>(null)
@@ -26,6 +29,7 @@ export function ViewUiProvider({ children }: { children: ReactNode }) {
   const [focusId, setFocusId] = useState<string | null>(null)
   const [activeId, setActiveId] = useState<string | null>(null)
   const [query, setQuery] = useState('')
+  const [markerFilter, setMarkerFilter] = useState<MarkerFilter>(null)
 
   const enterFocus = useCallback((id: string) => {
     setFocusId(id)
@@ -42,12 +46,14 @@ export function ViewUiProvider({ children }: { children: ReactNode }) {
       focusId,
       activeId,
       query,
+      markerFilter,
       enterFocus,
       exitFocus,
       setActiveId,
-      setQuery
+      setQuery,
+      setMarkerFilter
     }),
-    [activeId, enterFocus, exitFocus, focusId, query]
+    [activeId, enterFocus, exitFocus, focusId, markerFilter, query]
   )
 
   return <ViewUiContext.Provider value={api}>{children}</ViewUiContext.Provider>

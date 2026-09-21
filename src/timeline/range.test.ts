@@ -9,6 +9,8 @@ function pov(partial: Partial<POVRuntime> & Pick<POVRuntime, 'id' | 'offset' | '
     enabled: true,
     muted: true,
     playbackSource: 'proxy',
+    markerColor: null,
+    exportRanges: [],
     missing: false,
     ...partial
   }

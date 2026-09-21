@@ -25,6 +25,8 @@ interface TimelineZoomBarProps {
 
 type DragMode = 'pan' | 'start' | 'end' | 'seek'
 
+const CLICK_MOVE_PX = 4
+
 export function TimelineZoomBar({
   povs,
   masterTime,
@@ -41,6 +43,8 @@ export function TimelineZoomBar({
     pointerId: number
     originX: number
     originViewport: TimelineViewport
+    originTime: number
+    moved: boolean
   } | null>(null)
   const isArmed = useArmedLookup()
   const empty = fullRange.duration <= 0
@@ -70,14 +74,17 @@ export function TimelineZoomBar({
     if (disabled || empty || event.button !== 0) return
     event.preventDefault()
     const mode = resolveMode(event.target)
+    const time = timeAtClientX(event.clientX)
     dragRef.current = {
       mode,
       pointerId: event.pointerId,
       originX: event.clientX,
-      originViewport: viewport
+      originViewport: viewport,
+      originTime: time,
+      moved: false
     }
     event.currentTarget.setPointerCapture(event.pointerId)
-    if (mode === 'seek') onScrub(timeAtClientX(event.clientX))
+    if (mode === 'seek') onScrub(time)
   }
 
   function onPointerMove(event: ReactPointerEvent<HTMLDivElement>): void {
@@ -98,6 +105,10 @@ export function TimelineZoomBar({
       return
     }
 
+    const dx = Math.abs(event.clientX - drag.originX)
+    if (!drag.moved && dx < CLICK_MOVE_PX) return
+    drag.moved = true
+
     const node = trackRef.current
     if (!node) return
     const width = node.getBoundingClientRect().width
@@ -114,7 +125,15 @@ export function TimelineZoomBar({
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId)
     }
-    if (drag.mode === 'seek') onCommitScrub()
+    if (drag.mode === 'seek') {
+      onCommitScrub()
+      return
+    }
+    // Click on the zoom window (no drag) → jump playhead.
+    if (drag.mode === 'pan' && !drag.moved) {
+      onScrub(drag.originTime)
+      onCommitScrub()
+    }
   }
 
   return (
@@ -126,7 +145,7 @@ export function TimelineZoomBar({
       aria-valuemin={fullRange.start}
       aria-valuemax={fullRange.end}
       aria-valuenow={masterTime}
-      title="拖中间平移 · 拉两端缩放 · 点空白或拖播放头定位"
+      title="左键点击定位 · 拖中间平移 · 拉两端缩放 · 拖播放头定位"
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
@@ -146,6 +165,30 @@ export function TimelineZoomBar({
             />
           )
         })}
+      </div>
+
+      <div className="timeline-zoom-exports" aria-hidden>
+        {/* Later POVs first so earlier tracks paint on top when ranges overlap. */}
+        {[...povs].reverse().flatMap((pov) =>
+          pov.exportRanges.map((selection) => {
+            const leftPct =
+              ((selection.start - fullRange.start) / Math.max(fullRange.duration, 0.001)) * 100
+            const widthPct =
+              ((selection.end - selection.start) / Math.max(fullRange.duration, 0.001)) * 100
+            return (
+              <div
+                key={`${pov.id}:${selection.id}`}
+                className={`timeline-zoom-export${
+                  pov.markerColor ? ` marker-${pov.markerColor}` : ' marker-default'
+                }`}
+                style={{
+                  left: `${leftPct}%`,
+                  width: `${Math.max(widthPct, 0)}%`
+                }}
+              />
+            )
+          })
+        )}
       </div>
 
       <div

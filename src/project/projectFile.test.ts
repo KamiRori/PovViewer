@@ -12,6 +12,8 @@ function samplePov(overrides: Partial<POVRuntime> = {}): POVRuntime {
     enabled: true,
     muted: true,
     playbackSource: 'original',
+    markerColor: null,
+    exportRanges: [],
     metadataReady: true,
     missing: false,
     ...overrides
@@ -48,6 +50,33 @@ describe('serializeProject', () => {
   it('round-trips a proxy playbackSource', () => {
     const json = serializeProject([samplePov({ playbackSource: 'proxy' })])
     expect(json.povs[0]?.playbackSource).toBe('proxy')
+  })
+
+  it('persists per-POV exportRanges including zero-length', () => {
+    const json = serializeProject([
+      samplePov({
+        exportRanges: [{ id: 'r1', start: 12, end: 40 }]
+      }),
+      samplePov({
+        id: 'bob',
+        playerName: 'Bob',
+        filePath: 'D:/POV/Bob.mp4',
+        exportRanges: [
+          { id: 'r2', start: 5, end: 5 },
+          { id: 'r3', start: 20, end: 30 }
+        ]
+      })
+    ])
+    expect(json.povs[0]?.exportRanges).toEqual([{ id: 'r1', start: 12, end: 40 }])
+    expect(json.povs[1]?.exportRanges).toEqual([
+      { id: 'r2', start: 5, end: 5 },
+      { id: 'r3', start: 20, end: 30 }
+    ])
+    expect(json.povs[0]).not.toHaveProperty('exportRange')
+  })
+  it('persists markerColor', () => {
+    const json = serializeProject([samplePov({ markerColor: 'cyan' })])
+    expect(json.povs[0]?.markerColor).toBe('cyan')
   })
 })
 
@@ -87,6 +116,60 @@ describe('parseProjectJson', () => {
     expect(parsed.ok).toBe(true)
     if (!parsed.ok) return
     expect(parsed.runtime[0]?.playbackSource).toBe('original')
+  })
+
+  it('loads per-POV exportRanges from project files', () => {
+    const parsed = parseProjectJson(
+      JSON.stringify({
+        version: 1,
+        masterDuration: 120,
+        povs: [
+          {
+            id: 'alice',
+            playerName: 'Alice',
+            filePath: 'D:/POV/Alice.mp4',
+            offset: 0,
+            enabled: true,
+            muted: true,
+            exportRanges: [
+              { id: 'a', start: 10, end: 50 },
+              { id: 'b', start: 60, end: 80 }
+            ]
+          }
+        ]
+      })
+    )
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.runtime[0]?.exportRanges).toEqual([
+      { id: 'a', start: 10, end: 50 },
+      { id: 'b', start: 60, end: 80 }
+    ])
+  })
+
+  it('migrates legacy single exportRange into exportRanges', () => {
+    const parsed = parseProjectJson(
+      JSON.stringify({
+        version: 1,
+        masterDuration: 120,
+        povs: [
+          {
+            id: 'alice',
+            playerName: 'Alice',
+            filePath: 'D:/POV/Alice.mp4',
+            offset: 0,
+            enabled: true,
+            muted: true,
+            exportRange: { start: 10, end: 50 }
+          }
+        ]
+      })
+    )
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.runtime[0]?.exportRanges).toHaveLength(1)
+    expect(parsed.runtime[0]?.exportRanges[0]).toMatchObject({ start: 10, end: 50 })
+    expect(parsed.runtime[0]?.exportRanges[0]?.id).toBeTruthy()
   })
 
   it('rejects unsupported versions', () => {
