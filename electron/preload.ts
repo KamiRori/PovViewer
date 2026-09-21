@@ -1,5 +1,6 @@
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IpcChannel } from './channels'
+import { DEBUG_METRICS_PUSH, type DebugSnapshot, type FeaturePerfReport } from './debugTypes'
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.webm'])
 
@@ -12,6 +13,10 @@ function hasVideoExtension(filePath: string): boolean {
 
 const povApi = {
   selectVideoFiles: (): Promise<string[]> => ipcRenderer.invoke(IpcChannel.selectVideoFiles),
+  selectJsonFile: (title: string): Promise<string | null> =>
+    ipcRenderer.invoke(IpcChannel.selectJsonFile, title),
+  readTextFile: (filePath: string): Promise<string> =>
+    ipcRenderer.invoke(IpcChannel.readTextFile, filePath),
   toMediaUrl: (filePath: string): Promise<string> => ipcRenderer.invoke(IpcChannel.toMediaUrl, filePath),
   /**
    * Must receive the original File from the drop event, one at a time.
@@ -29,6 +34,20 @@ const povApi = {
     const videos = paths.filter((filePath) => filePath && hasVideoExtension(filePath))
     if (videos.length === 0) return Promise.resolve([])
     return ipcRenderer.invoke(IpcChannel.registerPaths, videos)
+  },
+  openGpuDebug: (): Promise<boolean> => ipcRenderer.invoke(IpcChannel.openGpuDebug),
+  reportFeaturePerf: (report: FeaturePerfReport): void => {
+    ipcRenderer.send(IpcChannel.reportFeaturePerf, report)
+  },
+  getDebugSnapshot: (): Promise<DebugSnapshot> => ipcRenderer.invoke(IpcChannel.getDebugSnapshot),
+  onDebugSnapshot: (listener: (snapshot: DebugSnapshot) => void): (() => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, snapshot: DebugSnapshot): void => {
+      listener(snapshot)
+    }
+    ipcRenderer.on(DEBUG_METRICS_PUSH, handler)
+    return () => {
+      ipcRenderer.removeListener(DEBUG_METRICS_PUSH, handler)
+    }
   }
 }
 

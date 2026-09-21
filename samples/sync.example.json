@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "povs": [
+    { "playerName": "Alice", "offset": 0 },
+    { "playerName": "Bob", "offset": 13.42, "confidence": 0.92 },
+    { "playerName": "Charlie", "offset": -5.81 }
+  ]
+}

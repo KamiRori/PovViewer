@@ -1,22 +1,32 @@
-import { memo, useEffect, useRef } from 'react'
+import { memo, useEffect, useRef, useState } from 'react'
 import {
   expectedVideoTime,
-  HARD_SEEK_THRESHOLD_SECONDS,
+  hardSeekThresholdSeconds,
   povPlaybackStatus,
   softPlaybackRate,
   syncAction,
   type PlaybackRate
 } from '../timeline/playbackMath'
 import { useMasterTimeRef } from '../timeline/store'
+import { useArmedCount } from './playbackArm'
+import { recordContinuousPlay, recordHardSeek, recordSampleSeek } from './perfCounters'
+import { usePreviewQuality } from './previewQuality'
+import {
+  releaseHardSeek,
+  releaseSampleSeek,
+  tryAcquireHardSeek,
+  tryAcquireSampleSeek
+} from './seekGate'
 
-/** After a verified hard seek, avoid another hard seek briefly. */
-const HARD_SEEK_COOLDOWN_MS = 800
-/** After rate changes / hard seeks, play at the exact base rate before soft-nudging again. */
-const SOFT_SYNC_SUPPRESS_MS = 1200
-/** Seek counts as landed when within this many seconds of the target. */
-const SEEK_VERIFY_SECONDS = 0.35
+const HARD_SEEK_COOLDOWN_MS = 1400
+const SOFT_SYNC_SUPPRESS_MS = 1800
+const SEEK_VERIFY_SECONDS = 0.4
+const SAMPLE_SEEK_EPSILON = 0.1
+/** Cap still-frame canvas so idle cards stay cheap to composite. */
+const STILL_MAX_EDGE = 480
 
 interface VideoSurfaceProps {
+  povId: string
   src: string
   offset: number
   duration: number
@@ -24,11 +34,14 @@ interface VideoSurfaceProps {
   playing: boolean
   playbackRate: PlaybackRate
   seekGeneration: number
+  /** When false, release the decoder and show a still frame only. */
+  armed: boolean
   onDuration: (duration: number) => void
   onError: () => void
 }
 
 function VideoSurfaceImpl({
+  povId,
   src,
   offset,
   duration,
@@ -36,11 +49,19 @@ function VideoSurfaceImpl({
   playing,
   playbackRate,
   seekGeneration,
+  armed,
   onDuration,
   onError
 }: VideoSurfaceProps) {
   const masterTimeRef = useMasterTimeRef()
+  const { settings } = usePreviewQuality()
+  const armedCount = useArmedCount()
+  const hostRef = useRef<HTMLDivElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const stillRef = useRef<HTMLCanvasElement>(null)
+  const [visible, setVisible] = useState(true)
+  const [hasStill, setHasStill] = useState(false)
+  const [mediaReady, setMediaReady] = useState(false)
   const offsetRef = useRef(offset)
   const durationRef = useRef(duration)
   const metadataReadyRef = useRef(metadataReady)
@@ -48,11 +69,14 @@ function VideoSurfaceImpl({
   const baseRateRef = useRef(playbackRate)
   const onDurationRef = useRef(onDuration)
   const onErrorRef = useRef(onError)
+  const armedRef = useRef(armed)
   const seekingRef = useRef(false)
   const seekTokenRef = useRef(0)
   const hardSeekCooldownUntilRef = useRef(0)
   const softSyncSuppressUntilRef = useRef(0)
   const playRequestRef = useRef<Promise<void> | null>(null)
+  const liveRef = useRef(false)
+  const probedSrcRef = useRef<string | null>(null)
   offsetRef.current = offset
   durationRef.current = duration
   metadataReadyRef.current = metadataReady
@@ -60,18 +84,127 @@ function VideoSurfaceImpl({
   baseRateRef.current = playbackRate
   onDurationRef.current = onDuration
   onErrorRef.current = onError
+  armedRef.current = armed
 
+  const sampled = settings.playbackMode === 'sampled'
+  /** Only armed cards keep a live decoder pipeline attached. */
+  const attachMedia = armed && visible
+  const live = attachMedia && !sampled && playing
+  liveRef.current = live
+
+  useEffect(() => {
+    const host = hostRef.current
+    if (!host || typeof IntersectionObserver === 'undefined') return
+    const observer = new IntersectionObserver(
+      (entries) => {
+        const entry = entries[0]
+        setVisible(Boolean(entry?.isIntersecting))
+      },
+      { root: null, rootMargin: '120px 0px', threshold: 0.05 }
+    )
+    observer.observe(host)
+    return () => observer.disconnect()
+  }, [])
+
+  // Attach / release the media element. Idle cards must not keep HW decoders warm.
   useEffect(() => {
     const video = videoRef.current
     if (!video) return
 
-    const status = povPlaybackStatus(
+    if (!attachMedia) {
+      captureStill(video, stillRef.current, () => setHasStill(true))
+      releaseMedia(video)
+      setMediaReady(false)
+      playRequestRef.current = null
+      seekingRef.current = false
+      return
+    }
+
+    if (video.dataset.mediaSrc !== src) {
+      video.dataset.mediaSrc = src
+      video.src = src
+      video.preload = 'auto'
+      video.load()
+      setMediaReady(false)
+    }
+  }, [attachMedia, src])
+
+  // One-shot metadata + still probe for cards that are not armed yet (timeline duration).
+  useEffect(() => {
+    if (attachMedia) return
+    if (probedSrcRef.current === src) return
+
+    let cancelled = false
+    let painted = false
+    let seekTimer = 0
+    const probe = document.createElement('video')
+    probe.muted = true
+    probe.playsInline = true
+    probe.preload = 'metadata'
+    probe.src = src
+
+    const finish = () => {
+      probe.removeAttribute('src')
+      probe.load()
+    }
+
+    const paintOnce = () => {
+      if (cancelled || painted) return
+      painted = true
+      window.clearTimeout(seekTimer)
+      captureStill(probe, stillRef.current, () => setHasStill(true))
+      probedSrcRef.current = src
+      finish()
+    }
+
+    const onMeta = () => {
+      if (cancelled) return
+      const nextDuration = probe.duration
+      if (Number.isFinite(nextDuration)) onDurationRef.current(nextDuration)
+      const expected = Math.max(0, expectedVideoTime(masterTimeRef.current, offsetRef.current))
+      if (expected > 0.05 && Number.isFinite(nextDuration) && expected <= nextDuration) {
+        const onSeeked = () => {
+          probe.removeEventListener('seeked', onSeeked)
+          paintOnce()
+        }
+        probe.addEventListener('seeked', onSeeked)
+        try {
+          probe.currentTime = expected
+        } catch {
+          paintOnce()
+          return
+        }
+        seekTimer = window.setTimeout(paintOnce, 900)
+      } else {
+        paintOnce()
+      }
+    }
+
+    probe.addEventListener('loadedmetadata', onMeta)
+    probe.addEventListener('error', () => {
+      if (!cancelled) onErrorRef.current()
+      finish()
+    })
+
+    return () => {
+      cancelled = true
+      window.clearTimeout(seekTimer)
+      probe.removeEventListener('loadedmetadata', onMeta)
+      finish()
+    }
+  }, [attachMedia, src, masterTimeRef])
+
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !attachMedia || !mediaReady) return
+
+    const nextStatus = povPlaybackStatus(
       masterTimeRef.current,
       offsetRef.current,
       durationRef.current,
       metadataReadyRef.current
     )
-    if (status !== 'active') {
+    if (nextStatus !== 'active') {
       seekingRef.current = false
       video.pause()
       return
@@ -82,25 +215,134 @@ function VideoSurfaceImpl({
     video.pause()
     video.playbackRate = baseRateRef.current
     void seekAndVerify(video, expected, seekingRef, seekTokenRef, hardSeekCooldownUntilRef).then((ok) => {
-      if (!ok) return
+      if (!ok || !armedRef.current) return
       video.playbackRate = baseRateRef.current
       softSyncSuppressUntilRef.current = performance.now() + SOFT_SYNC_SUPPRESS_MS
-      if (playingRef.current) requestPlay(video, playRequestRef)
+      captureStill(video, stillRef.current, () => setHasStill(true))
+      if (!sampled && playingRef.current && liveRef.current) requestPlay(video, playRequestRef)
     })
-  }, [seekGeneration, masterTimeRef])
+  }, [seekGeneration, attachMedia, mediaReady, masterTimeRef, sampled])
 
   useEffect(() => {
     const video = videoRef.current
-    if (!video) return
+    if (!video || !attachMedia) return
     softSyncSuppressUntilRef.current = performance.now() + SOFT_SYNC_SUPPRESS_MS
     if (!seekingRef.current) video.playbackRate = playbackRate
-  }, [playbackRate])
+  }, [playbackRate, attachMedia])
 
   useEffect(() => {
+    if (!sampled || !attachMedia) return
     const video = videoRef.current
-    if (!video) return
+    if (!video || !mediaReady) return
 
-    if (!playing) {
+    video.pause()
+    playRequestRef.current = null
+
+    if (!playing) return
+
+    let closed = false
+    let timer = 0
+    let safetyTimer = 0
+    const interval = 1000 / Math.max(3, settings.maxFps)
+    const stagger = Math.abs(hashString(povId)) % Math.max(1, Math.floor(interval))
+
+    const schedule = (delay: number) => {
+      window.clearTimeout(timer)
+      timer = window.setTimeout(run, delay)
+    }
+
+    const run = () => {
+      if (closed) return
+      const nextStatus = povPlaybackStatus(
+        masterTimeRef.current,
+        offsetRef.current,
+        durationRef.current,
+        metadataReadyRef.current
+      )
+      if (nextStatus !== 'active' || seekingRef.current || video.seeking) {
+        schedule(interval)
+        return
+      }
+
+      const expected = Math.max(0, expectedVideoTime(masterTimeRef.current, offsetRef.current))
+      if (Math.abs(video.currentTime - expected) <= SAMPLE_SEEK_EPSILON) {
+        schedule(interval)
+        return
+      }
+
+      if (!tryAcquireSampleSeek(povId)) {
+        schedule(Math.max(40, interval / 2))
+        return
+      }
+
+      let released = false
+      const release = () => {
+        if (released) return
+        released = true
+        window.clearTimeout(safetyTimer)
+        releaseSampleSeek(povId)
+      }
+
+      const onSeeked = () => {
+        video.removeEventListener('seeked', onSeeked)
+        video.removeEventListener('error', onError)
+        release()
+        recordSampleSeek()
+        if (!closed) schedule(interval)
+      }
+      const onError = () => {
+        video.removeEventListener('seeked', onSeeked)
+        video.removeEventListener('error', onError)
+        release()
+        if (!closed) schedule(interval)
+      }
+
+      video.addEventListener('seeked', onSeeked)
+      video.addEventListener('error', onError)
+      try {
+        video.currentTime = expected
+      } catch {
+        release()
+        schedule(interval)
+        return
+      }
+      safetyTimer = window.setTimeout(() => {
+        video.removeEventListener('seeked', onSeeked)
+        video.removeEventListener('error', onError)
+        release()
+        if (!closed) schedule(interval)
+      }, 900)
+    }
+
+    schedule(stagger)
+    return () => {
+      closed = true
+      window.clearTimeout(timer)
+      window.clearTimeout(safetyTimer)
+      releaseSampleSeek(povId)
+      video.pause()
+    }
+  }, [sampled, settings.maxFps, playing, attachMedia, mediaReady, masterTimeRef, povId])
+
+  useEffect(() => {
+    if (sampled || !attachMedia) return
+    const video = videoRef.current
+    if (!video || !mediaReady) return
+    if (!playing || !live) {
+      video.pause()
+      playRequestRef.current = null
+      return
+    }
+    if (seekingRef.current || video.seeking) return
+    requestPlay(video, playRequestRef)
+  }, [sampled, playing, live, attachMedia, mediaReady])
+
+  useEffect(() => {
+    if (sampled || !attachMedia) return
+    const video = videoRef.current
+    if (!video || !mediaReady) return
+
+    if (!playing || !live) {
       video.pause()
       playRequestRef.current = null
       video.playbackRate = baseRateRef.current
@@ -108,50 +350,60 @@ function VideoSurfaceImpl({
     }
 
     let frame = 0
-    const tick = () => {
-      const status = povPlaybackStatus(
+    let lastSoftCheck = 0
+    const hardThreshold = hardSeekThresholdSeconds(armedCount)
+    const tick = (stamp: number) => {
+      const nextStatus = povPlaybackStatus(
         masterTimeRef.current,
         offsetRef.current,
         durationRef.current,
         metadataReadyRef.current
       )
 
-      if (status !== 'active') {
+      if (nextStatus !== 'active') {
         if (!video.paused) video.pause()
       } else if (seekingRef.current || video.seeking) {
         if (!video.paused) video.pause()
       } else {
         const expected = Math.max(0, expectedVideoTime(masterTimeRef.current, offsetRef.current))
         const drift = Math.abs(video.currentTime - expected)
-        const action = syncAction(video.currentTime, expected)
         const now = performance.now()
-        const softAllowed = now >= softSyncSuppressUntilRef.current
 
-        if (drift > HARD_SEEK_THRESHOLD_SECONDS) {
-          if (!video.paused) video.pause()
-          if (now >= hardSeekCooldownUntilRef.current) {
+        if (drift > hardThreshold) {
+          const canHardSeek =
+            now >= hardSeekCooldownUntilRef.current && tryAcquireHardSeek(povId)
+          if (canHardSeek) {
             softSyncSuppressUntilRef.current = now + SOFT_SYNC_SUPPRESS_MS
-            void seekAndVerify(video, expected, seekingRef, seekTokenRef, hardSeekCooldownUntilRef).then(
-              (ok) => {
-                if (!ok || !playingRef.current) return
+            void seekAndVerify(video, expected, seekingRef, seekTokenRef, hardSeekCooldownUntilRef)
+              .then((ok) => {
+                releaseHardSeek(povId)
+                if (!ok || !playingRef.current || !armedRef.current) return
                 video.playbackRate = baseRateRef.current
                 softSyncSuppressUntilRef.current = performance.now() + SOFT_SYNC_SUPPRESS_MS
                 requestPlay(video, playRequestRef)
-              }
-            )
+              })
+              .catch(() => {
+                releaseHardSeek(povId)
+              })
           } else {
-            // Wait out the cooldown at the exact base rate instead of soft-fighting the drift.
+            // Another card is seeking, or we are in cooldown: keep playing.
+            // Pausing here was the main cause of "one smooth, one stuck".
             if (video.playbackRate !== baseRateRef.current) {
               video.playbackRate = baseRateRef.current
             }
+            requestPlay(video, playRequestRef)
           }
-        } else if (softAllowed && action === 'soft') {
-          video.playbackRate = softPlaybackRate(baseRateRef.current, video.currentTime, expected)
-          requestPlay(video, playRequestRef)
-        } else {
-          if (video.playbackRate !== baseRateRef.current) {
+        } else if (stamp - lastSoftCheck > 300) {
+          lastSoftCheck = stamp
+          const action = syncAction(video.currentTime, expected)
+          const softAllowed = now >= softSyncSuppressUntilRef.current
+          if (softAllowed && action === 'soft') {
+            video.playbackRate = softPlaybackRate(baseRateRef.current, video.currentTime, expected)
+          } else if (video.playbackRate !== baseRateRef.current) {
             video.playbackRate = baseRateRef.current
           }
+          requestPlay(video, playRequestRef)
+        } else {
           requestPlay(video, playRequestRef)
         }
       }
@@ -162,38 +414,88 @@ function VideoSurfaceImpl({
     frame = requestAnimationFrame(tick)
     return () => {
       cancelAnimationFrame(frame)
+      releaseHardSeek(povId)
       video.pause()
       playRequestRef.current = null
     }
-  }, [playing, masterTimeRef])
+  }, [sampled, playing, live, attachMedia, mediaReady, masterTimeRef, armedCount, povId])
 
   return (
-    <video
-      ref={videoRef}
-      className="video-surface"
-      src={src}
-      muted
-      playsInline
-      preload="auto"
-      tabIndex={-1}
-      disablePictureInPicture
-      onLoadedMetadata={(event) => {
-        const nextDuration = event.currentTarget.duration
-        if (Number.isFinite(nextDuration)) onDurationRef.current(nextDuration)
-        const expected = expectedVideoTime(masterTimeRef.current, offsetRef.current)
-        if (expected >= 0 && expected <= nextDuration) {
-          void seekAndVerify(
-            event.currentTarget,
-            expected,
-            seekingRef,
-            seekTokenRef,
-            hardSeekCooldownUntilRef
-          )
-        }
-      }}
-      onError={() => onErrorRef.current()}
-    />
+    <div ref={hostRef} className="video-host">
+      <video
+        ref={videoRef}
+        className={attachMedia ? 'video-surface' : 'video-surface video-surface-detached'}
+        muted
+        playsInline
+        preload="none"
+        tabIndex={-1}
+        disablePictureInPicture
+        onLoadedMetadata={(event) => {
+          const nextDuration = event.currentTarget.duration
+          if (Number.isFinite(nextDuration)) onDurationRef.current(nextDuration)
+          probedSrcRef.current = src
+          setMediaReady(true)
+        }}
+        onLoadedData={(event) => {
+          captureStill(event.currentTarget, stillRef.current, () => setHasStill(true))
+          setMediaReady(true)
+        }}
+        onError={() => onErrorRef.current()}
+      />
+      <canvas
+        ref={stillRef}
+        className={`video-still${attachMedia ? ' video-still-hidden' : ''}${hasStill ? '' : ' is-empty'}`}
+        aria-hidden={attachMedia}
+      />
+      {!attachMedia ? <p className="decode-badge">已卸载解码器</p> : null}
+      {sampled && attachMedia && playing ? (
+        <p className="decode-badge decode-badge-quality">{settings.maxFps}fps 采样</p>
+      ) : null}
+    </div>
   )
+}
+
+function releaseMedia(video: HTMLVideoElement): void {
+  video.pause()
+  if (!video.getAttribute('src') && !video.dataset.mediaSrc) return
+  video.removeAttribute('src')
+  delete video.dataset.mediaSrc
+  video.load()
+}
+
+function captureStill(
+  video: HTMLVideoElement,
+  canvas: HTMLCanvasElement | null,
+  onPainted?: () => void
+): void {
+  if (!canvas || video.readyState < 2) return
+  const width = video.videoWidth || 0
+  const height = video.videoHeight || 0
+  if (width <= 0 || height <= 0) return
+  const longest = Math.max(width, height)
+  const scale = longest > STILL_MAX_EDGE ? STILL_MAX_EDGE / longest : 1
+  const targetW = Math.max(1, Math.round(width * scale))
+  const targetH = Math.max(1, Math.round(height * scale))
+  if (canvas.width !== targetW || canvas.height !== targetH) {
+    canvas.width = targetW
+    canvas.height = targetH
+  }
+  const context = canvas.getContext('2d')
+  if (!context) return
+  try {
+    context.drawImage(video, 0, 0, targetW, targetH)
+    onPainted?.()
+  } catch {
+    // decode not ready / tainted — ignore
+  }
+}
+
+function hashString(value: string): number {
+  let hash = 0
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) | 0
+  }
+  return hash
 }
 
 function requestPlay(
@@ -203,6 +505,9 @@ function requestPlay(
   if (!video.paused || playRequestRef.current) return
   const request = video
     .play()
+    .then(() => {
+      recordContinuousPlay()
+    })
     .catch(() => undefined)
     .finally(() => {
       if (playRequestRef.current === request) playRequestRef.current = null
@@ -240,7 +545,10 @@ function seekAndVerify(
       window.clearTimeout(timeout)
       if (seekTokenRef.current === token) {
         seekingRef.current = false
-        if (ok) hardSeekCooldownUntilRef.current = performance.now() + HARD_SEEK_COOLDOWN_MS
+        if (ok) {
+          hardSeekCooldownUntilRef.current = performance.now() + HARD_SEEK_COOLDOWN_MS
+          recordHardSeek()
+        }
       }
       resolve(ok)
     }
@@ -283,12 +591,14 @@ function seekAndVerify(
 
 export const VideoSurface = memo(VideoSurfaceImpl, (prev, next) => {
   return (
+    prev.povId === next.povId &&
     prev.src === next.src &&
     prev.offset === next.offset &&
     prev.duration === next.duration &&
     prev.metadataReady === next.metadataReady &&
     prev.playing === next.playing &&
     prev.playbackRate === next.playbackRate &&
-    prev.seekGeneration === next.seekGeneration
+    prev.seekGeneration === next.seekGeneration &&
+    prev.armed === next.armed
   )
 })

@@ -8,6 +8,9 @@ export const SYNC_THRESHOLD_SECONDS = 0.05
 /** Only rewrite currentTime past this — hard seeks make playback stutter. */
 export const HARD_SEEK_THRESHOLD_SECONDS = 0.25
 
+/** With 2+ armed POVs, prefer soft sync longer to avoid one card freezing on hard seek. */
+export const MULTI_ARM_HARD_SEEK_THRESHOLD_SECONDS = 0.55
+
 export type PovPlaybackStatus = 'not_started' | 'active' | 'ended' | 'pending'
 export type SyncAction = 'none' | 'soft' | 'hard'
 
@@ -47,6 +50,10 @@ export function syncAction(actualTime: number, expectedTime: number): SyncAction
  */
 export function softPlaybackRate(baseRate: number, actualTime: number, expectedTime: number): number {
   const drift = expectedTime - actualTime
-  const adjust = Math.max(-0.08, Math.min(0.08, drift * 0.5))
+  const adjust = Math.max(-0.05, Math.min(0.05, drift * 0.35))
   return Math.max(0.25, Math.min(4, baseRate + adjust))
+}
+
+export function hardSeekThresholdSeconds(armedCount: number): number {
+  return armedCount >= 2 ? MULTI_ARM_HARD_SEEK_THRESHOLD_SECONDS : HARD_SEEK_THRESHOLD_SECONDS
 }

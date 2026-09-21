@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest'
 import {
   expectedVideoTime,
+  HARD_SEEK_THRESHOLD_SECONDS,
+  hardSeekThresholdSeconds,
+  MULTI_ARM_HARD_SEEK_THRESHOLD_SECONDS,
   needsCorrection,
   povPlaybackStatus,
   softPlaybackRate,
@@ -46,5 +49,12 @@ describe('softPlaybackRate', () => {
   it('speeds up a late video and slows an early one', () => {
     expect(softPlaybackRate(1, 10, 10.1)).toBeGreaterThan(1)
     expect(softPlaybackRate(1, 10.1, 10)).toBeLessThan(1)
+  })
+})
+
+describe('hardSeekThresholdSeconds', () => {
+  it('widens the hard-seek threshold when multiple POVs are armed', () => {
+    expect(hardSeekThresholdSeconds(1)).toBe(HARD_SEEK_THRESHOLD_SECONDS)
+    expect(hardSeekThresholdSeconds(2)).toBe(MULTI_ARM_HARD_SEEK_THRESHOLD_SECONDS)
   })
 })

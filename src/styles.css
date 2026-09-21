@@ -135,7 +135,53 @@ main {
 }
 
 .drop-hint-inline {
-  margin: 0 0 12px;
+  margin: 0;
+}
+
+.banner-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.sync-unmatched {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid #5a4a2a;
+  border-radius: 8px;
+  background: #2a2418;
+  color: #e6c27a;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.text-button {
+  margin-left: auto;
+  border: none;
+  background: transparent;
+  color: var(--accent);
+  cursor: pointer;
+  padding: 0;
+}
+
+.offset-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 6px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.offset-input {
+  width: 72px;
+  border: 1px solid var(--line);
+  background: #12141a;
+  border-radius: 4px;
+  padding: 2px 6px;
+  font-variant-numeric: tabular-nums;
 }
 
 .grid {
@@ -154,6 +200,28 @@ main {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel);
+  cursor: pointer;
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.pov-card:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.pov-card.is-armed {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px rgba(122, 162, 255, 0.45);
+}
+
+.pov-card input,
+.pov-card textarea,
+.pov-card select {
+  cursor: text;
+}
+
+.pov-card button {
+  cursor: pointer;
 }
 
 .pov-frame {
@@ -186,6 +254,86 @@ main {
 .video-surface {
   object-fit: contain;
   background: black;
+}
+
+.video-host {
+  position: relative;
+  width: 100%;
+  height: 100%;
+}
+
+.decode-badge {
+  position: absolute;
+  right: 6px;
+  bottom: 6px;
+  margin: 0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(0, 0, 0, 0.65);
+  color: #d7dde8;
+  font-size: 11px;
+}
+
+.decode-stats {
+  color: var(--muted);
+  font-variant-numeric: tabular-nums;
+  font-size: 12px;
+}
+
+.video-surface-hidden,
+.video-surface-detached {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.video-still {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #07080c;
+}
+
+.video-still.video-still-hidden {
+  display: none;
+}
+
+.video-still.is-empty {
+  background: #07080c;
+}
+
+.video-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: black;
+}
+
+.decode-badge-quality {
+  left: 6px;
+  right: auto;
+}
+
+.preview-settings {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.preview-hint {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.preview-settings select:disabled {
+  opacity: 0.45;
 }
 
 .pov-placeholder {

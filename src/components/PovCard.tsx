@@ -1,4 +1,5 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type MouseEvent, type KeyboardEvent as ReactKeyboardEvent } from 'react'
+import { usePlaybackArm } from '../player/playbackArm'
 import { VideoSurface } from '../player/VideoSurface'
 import type { POVRuntime } from '../project/types'
 import {
@@ -16,6 +17,7 @@ interface PovCardProps {
   playbackRate: PlaybackRate
   seekGeneration: number
   onRename: (id: string, playerName: string) => void
+  onOffset: (id: string, offset: number) => void
   onRemove: (id: string) => void
   onDuration: (id: string, duration: number) => void
 }
@@ -27,12 +29,15 @@ export function PovCard({
   playbackRate,
   seekGeneration,
   onRename,
+  onOffset,
   onRemove,
   onDuration
 }: PovCardProps) {
+  const { armed, toggle } = usePlaybackArm(pov.id)
   const [mediaUrl, setMediaUrl] = useState<string | null>(null)
   const [unplayable, setUnplayable] = useState(false)
   const [draft, setDraft] = useState(pov.playerName)
+  const [offsetDraft, setOffsetDraft] = useState(String(pov.offset))
   const fileName = fileNameFromPath(pov.filePath)
   const status = povPlaybackStatus(masterTime, pov.offset, pov.duration, pov.metadataReady)
   const videoTime = expectedVideoTime(masterTime, pov.offset)
@@ -40,6 +45,10 @@ export function PovCard({
   useEffect(() => {
     setDraft(pov.playerName)
   }, [pov.playerName])
+
+  useEffect(() => {
+    setOffsetDraft(String(pov.offset))
+  }, [pov.offset])
 
   useEffect(() => {
     let cancelled = false
@@ -65,14 +74,48 @@ export function PovCard({
   else if (status === 'ended') statusLabel = 'ENDED'
   else statusLabel = formatDuration(videoTime)
 
+  function commitOffset(): void {
+    const next = Number(offsetDraft)
+    if (!Number.isFinite(next)) {
+      setOffsetDraft(String(pov.offset))
+      return
+    }
+    if (next !== pov.offset) onOffset(pov.id, next)
+  }
+
+  function onCardActivate(event: MouseEvent<HTMLElement>): void {
+    const target = event.target as HTMLElement | null
+    if (!target) return
+    if (target.closest('input, button, select, textarea, label, a')) return
+    toggle()
+  }
+
+  function onCardKeyDown(event: ReactKeyboardEvent<HTMLElement>): void {
+    if (event.key !== 'Enter' && event.key !== ' ') return
+    const target = event.target as HTMLElement | null
+    if (target && target !== event.currentTarget) return
+    event.preventDefault()
+    toggle()
+  }
+
   return (
-    <article className="pov-card">
+    <article
+      className={`pov-card${armed ? ' is-armed' : ''}`}
+      data-armed={armed ? 'true' : 'false'}
+      role="button"
+      aria-pressed={armed}
+      title={armed ? '点击取消参与（将卸载解码器）' : '点击参与播放（挂载解码器）'}
+      tabIndex={0}
+      onClick={onCardActivate}
+      onKeyDown={onCardKeyDown}
+    >
       <div className="pov-frame">
         {unplayable ? (
           <p className="pov-placeholder">无法直接播放</p>
         ) : mediaUrl ? (
           <>
             <VideoSurface
+              povId={pov.id}
               src={mediaUrl}
               offset={pov.offset}
               duration={pov.duration}
@@ -80,6 +123,7 @@ export function PovCard({
               playing={playing}
               playbackRate={playbackRate}
               seekGeneration={seekGeneration}
+              armed={armed}
               onDuration={(nextDuration) => onDuration(pov.id, nextDuration)}
               onError={() => setUnplayable(true)}
             />
@@ -117,6 +161,21 @@ export function PovCard({
         </span>
         <span className="pov-status">{statusLabel}</span>
       </div>
+      <label className="offset-row">
+        <span>offset</span>
+        <input
+          className="offset-input"
+          value={offsetDraft}
+          inputMode="decimal"
+          spellCheck={false}
+          onChange={(event) => setOffsetDraft(event.target.value)}
+          onBlur={commitOffset}
+          onKeyDown={(event) => {
+            if (event.key === 'Enter') event.currentTarget.blur()
+          }}
+        />
+        <span>s</span>
+      </label>
       <button type="button" className="remove" onClick={() => onRemove(pov.id)}>
         移除
       </button>

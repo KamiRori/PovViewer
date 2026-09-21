@@ -1,6 +1,9 @@
 import { StrictMode, type ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { App } from './App'
+import { PlaybackArmProvider } from './player/playbackArm'
+import { PlayerSettingsProviders } from './player/PlayerSettingsProviders'
+
 import { ProjectProvider, useProject } from './project/store'
 import { PlaybackProvider } from './timeline/store'
 import './styles.css'
@@ -17,7 +20,11 @@ createRoot(root).render(
   <StrictMode>
     <ProjectProvider>
       <PlaybackBridge>
-        <App />
+        <PlaybackArmProvider>
+          <PlayerSettingsProviders>
+            <App />
+          </PlayerSettingsProviders>
+        </PlaybackArmProvider>
       </PlaybackBridge>
     </ProjectProvider>
   </StrictMode>

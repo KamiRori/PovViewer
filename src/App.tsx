@@ -2,17 +2,29 @@ import { useEffect, useRef, useState } from 'react'
 import { PovGrid } from './components/PovGrid'
 import { TimelineBar } from './components/TimelineBar'
 import { Toolbar } from './components/Toolbar'
+import { FeaturePerfReporter } from './player/FeaturePerfReporter'
 import { useProject } from './project/store'
+import { parseSyncJson } from './sync/parseSync'
 import { usePlayback } from './timeline/store'
 import { dataTransferHasFiles, pathsFromDroppedFiles } from './utils/dropFiles'
 
 export function App() {
-  const { state, importFiles, rename, remove, setColumns, setDuration } = useProject()
+  const {
+    state,
+    importFiles,
+    rename,
+    remove,
+    setColumns,
+    setDuration,
+    setOffset,
+    applySyncResults,
+    clearSyncReport
+  } = useProject()
   const playback = usePlayback()
-  const { toggle } = playback
-  const [importing, setImporting] = useState(false)
+  const { toggle, resync } = playback
+  const [busy, setBusy] = useState(false)
   const [dragging, setDragging] = useState(false)
-  const [dropHint, setDropHint] = useState<string | null>(null)
+  const [hint, setHint] = useState<string | null>(null)
   const dragDepthRef = useRef(0)
   const visible = state.povs.filter((pov) => pov.enabled)
 
@@ -30,7 +42,6 @@ export function App() {
     return () => window.removeEventListener('keydown', onKeyDown)
   }, [toggle])
 
-  // Keep drops from being swallowed by Electron / the browser default navigation.
   useEffect(() => {
     const block = (event: DragEvent) => {
       if (!dataTransferHasFiles(event.dataTransfer)) return
@@ -44,14 +55,38 @@ export function App() {
     }
   }, [])
 
-  async function onImport(): Promise<void> {
-    setImporting(true)
-    setDropHint(null)
+  async function onImportPov(): Promise<void> {
+    setBusy(true)
+    setHint(null)
     try {
       const paths = await window.povApi.selectVideoFiles()
       if (paths.length > 0) importFiles(paths)
     } finally {
-      setImporting(false)
+      setBusy(false)
+    }
+  }
+
+  async function onImportSync(): Promise<void> {
+    setBusy(true)
+    setHint(null)
+    clearSyncReport()
+    try {
+      const filePath = await window.povApi.selectJsonFile('Import Sync')
+      if (!filePath) return
+      const text = await window.povApi.readTextFile(filePath)
+      const parsed = parseSyncJson(text)
+      if (!parsed.ok) {
+        setHint(parsed.error)
+        return
+      }
+      applySyncResults(parsed.results)
+      resync()
+      setHint(`已应用 ${parsed.results.length} 条同步数据`)
+    } catch (error) {
+      console.error('[sync] import failed', error)
+      setHint('导入 sync.json 失败')
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -59,22 +94,32 @@ export function App() {
     dragDepthRef.current = 0
     setDragging(false)
     if (!fileList || fileList.length === 0) return
-    setImporting(true)
-    setDropHint(null)
+    setBusy(true)
+    setHint(null)
     try {
       const paths = await pathsFromDroppedFiles(fileList)
       if (paths.length > 0) {
         importFiles(paths)
       } else {
-        setDropHint('未能导入拖入的文件。请使用 .mp4 / .mkv / .mov / .webm，或改用 Import POV。')
+        setHint('未能导入拖入的文件。请使用 .mp4 / .mkv / .mov / .webm，或改用 Import POV。')
       }
     } catch (error) {
       console.error('[drop] import failed', error)
-      setDropHint('拖拽导入失败，请改用 Import POV。')
+      setHint('拖拽导入失败，请改用 Import POV。')
     } finally {
-      setImporting(false)
+      setBusy(false)
     }
   }
+
+  function onOffsetChange(id: string, offset: number): void {
+    setOffset(id, offset)
+    resync()
+  }
+
+  const unmatched =
+    state.lastSyncUnmatched.length > 0
+      ? `未匹配：${state.lastSyncUnmatched.join(', ')}`
+      : null
 
   return (
     <div
@@ -105,35 +150,52 @@ export function App() {
         <Toolbar
           columns={state.columns}
           count={visible.length}
-          importing={importing}
-          onImport={() => {
-            void onImport()
+          busy={busy}
+          onImportPov={() => {
+            void onImportPov()
+          }}
+          onImportSync={() => {
+            void onImportSync()
           }}
           onColumns={setColumns}
+          onOpenGpuDebug={() => {
+            void window.povApi.openGpuDebug()
+          }}
         />
       </header>
+      <FeaturePerfReporter playing={playback.state.playing} />
       <main>
+        {hint || unmatched ? (
+          <div className="banner-row">
+            {hint ? <p className="drop-hint drop-hint-inline">{hint}</p> : null}
+            {unmatched ? (
+              <p className="sync-unmatched">
+                {unmatched}
+                <button type="button" className="text-button" onClick={clearSyncReport}>
+                  关闭
+                </button>
+              </p>
+            ) : null}
+          </div>
+        ) : null}
         {visible.length === 0 ? (
           <section className="empty">
             <h2>还没有 POV</h2>
-            <p>点击 Import POV，或把视频文件拖进窗口。</p>
-            {dropHint ? <p className="drop-hint">{dropHint}</p> : null}
+            <p>点击 Import POV，或把视频文件拖进窗口。导入后可用 Import Sync 应用 sync.json。</p>
           </section>
         ) : (
-          <>
-            {dropHint ? <p className="drop-hint drop-hint-inline">{dropHint}</p> : null}
-            <PovGrid
-              povs={visible}
-              columns={state.columns}
-              masterTime={playback.state.masterTime}
-              playing={playback.state.playing}
-              playbackRate={playback.state.playbackRate}
-              seekGeneration={playback.state.seekGeneration}
-              onRename={rename}
-              onRemove={remove}
-              onDuration={setDuration}
-            />
-          </>
+          <PovGrid
+            povs={visible}
+            columns={state.columns}
+            masterTime={playback.state.masterTime}
+            playing={playback.state.playing}
+            playbackRate={playback.state.playbackRate}
+            seekGeneration={playback.state.seekGeneration}
+            onRename={rename}
+            onOffset={onOffsetChange}
+            onRemove={remove}
+            onDuration={setDuration}
+          />
         )}
       </main>
       <TimelineBar

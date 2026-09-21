@@ -1,3 +1,5 @@
+import { useArmedCount } from '../player/playbackArm'
+import { type PreviewQualityPreset, usePreviewQuality } from '../player/previewQuality'
 import { PLAYBACK_RATES, type PlaybackRate } from '../timeline/playbackMath'
 import { formatMasterTime } from '../timeline/timeFormat'
 import type { TimelineRange } from '../timeline/range'
@@ -30,6 +32,8 @@ export function TimelineBar({
   onResync
 }: TimelineBarProps) {
   const span = Math.max(range.duration, 0.001)
+  const preview = usePreviewQuality()
+  const armedCount = useArmedCount()
 
   return (
     <footer className="timeline-bar">
@@ -94,6 +98,48 @@ export function TimelineBar({
           <span className="visually-hidden">{span}</span>
         </span>
       </div>
+
+      <div className="preview-settings">
+        <label
+          className="speed"
+          title="中/低为采样预览：仅已选中的卡片按主时钟低频 seek。高为连续播放。点击卡片切换是否参与播放。"
+        >
+          预览画质
+          <select
+            value={preview.settings.preset}
+            onChange={(event) => preview.setPreset(event.target.value as PreviewQualityPreset)}
+          >
+            <option value="high">高（连续播放）</option>
+            <option value="medium">中（采样预览）</option>
+            <option value="low">低（更稀采样）</option>
+          </select>
+        </label>
+        <span className="decode-stats" title="点击视角卡片可切换是否参与播放；描边表示已选中">
+          参与播放 {armedCount}
+        </span>
+        <label
+          className="speed"
+          title="采样模式下每秒向主时钟对齐的次数。越低越省 GPU，画面越跳。"
+        >
+          采样帧率
+          <select
+            value={preview.settings.maxFps}
+            disabled={preview.settings.playbackMode !== 'sampled'}
+            onChange={(event) => preview.setMaxFps(Number(event.target.value))}
+          >
+            {uniqueSorted([3, 5, 8, 10, 12, 15, preview.settings.maxFps]).map((fps) => (
+              <option key={fps} value={fps}>
+                {fps}fps
+              </option>
+            ))}
+          </select>
+        </label>
+        <span className="preview-hint">仅描边卡片挂载解码器；其余为静态帧</span>
+      </div>
     </footer>
   )
+}
+
+function uniqueSorted(values: number[]): number[] {
+  return [...new Set(values)].sort((a, b) => a - b)
 }

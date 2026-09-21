@@ -1,4 +1,5 @@
 import { createContext, useContext, useMemo, useReducer, type ReactNode } from 'react'
+import type { SyncResult } from '../sync/types'
 import type { ColumnCount } from './types'
 import { initialProjectState, projectReducer, type ProjectState } from './reducer'
 
@@ -9,6 +10,9 @@ interface ProjectApi {
   remove: (id: string) => void
   setColumns: (columns: ColumnCount) => void
   setDuration: (id: string, duration: number) => void
+  setOffset: (id: string, offset: number) => void
+  applySyncResults: (results: SyncResult[]) => void
+  clearSyncReport: () => void
 }
 
 const ProjectContext = createContext<ProjectApi | null>(null)
@@ -22,7 +26,10 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       rename: (id, playerName) => dispatch({ type: 'rename', id, playerName }),
       remove: (id) => dispatch({ type: 'remove', id }),
       setColumns: (columns) => dispatch({ type: 'setColumns', columns }),
-      setDuration: (id, duration) => dispatch({ type: 'metadata', id, duration })
+      setDuration: (id, duration) => dispatch({ type: 'metadata', id, duration }),
+      setOffset: (id, offset) => dispatch({ type: 'setOffset', id, offset }),
+      applySyncResults: (results) => dispatch({ type: 'applySync', results }),
+      clearSyncReport: () => dispatch({ type: 'clearSyncReport' })
     }),
     [state]
   )

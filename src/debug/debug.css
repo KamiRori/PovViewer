@@ -1,0 +1,111 @@
+:root {
+  color: #e7e9ee;
+  background: #101218;
+  font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+}
+
+.debug-app {
+  padding: 16px 18px 28px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+header h1 {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 650;
+}
+
+.meta,
+.hint,
+.empty,
+.limitation {
+  margin: 6px 0 0;
+  color: #9aa3b5;
+}
+
+.limitation {
+  padding: 10px 12px;
+  border: 1px solid #2a3140;
+  border-radius: 8px;
+  background: #171b24;
+}
+
+.error {
+  color: #ff8f8f;
+}
+
+section h2 {
+  margin: 0 0 8px;
+  font-size: 14px;
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: 8px;
+}
+
+.stat {
+  border: 1px solid #2a3140;
+  border-radius: 8px;
+  padding: 8px 10px;
+  background: #151922;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.stat.accent {
+  border-color: #7aa2ff;
+}
+
+.stat-label {
+  color: #9aa3b5;
+  font-size: 11px;
+}
+
+.stat-value {
+  font-variant-numeric: tabular-nums;
+  font-size: 16px;
+  font-weight: 650;
+}
+
+.list {
+  margin: 0;
+  padding-left: 18px;
+  color: #c5ccd8;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  font-variant-numeric: tabular-nums;
+}
+
+th,
+td {
+  border-bottom: 1px solid #2a3140;
+  text-align: left;
+  padding: 6px 8px;
+}
+
+th {
+  color: #9aa3b5;
+  font-weight: 600;
+}
+
+tr.is-gpu td {
+  color: #9db8ff;
+}

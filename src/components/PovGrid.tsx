@@ -11,6 +11,7 @@ interface PovGridProps {
   playbackRate: PlaybackRate
   seekGeneration: number
   onRename: (id: string, playerName: string) => void
+  onOffset: (id: string, offset: number) => void
   onRemove: (id: string) => void
   onDuration: (id: string, duration: number) => void
 }
@@ -23,6 +24,7 @@ export function PovGrid({
   playbackRate,
   seekGeneration,
   onRename,
+  onOffset,
   onRemove,
   onDuration
 }: PovGridProps) {
@@ -37,6 +39,7 @@ export function PovGrid({
           playbackRate={playbackRate}
           seekGeneration={seekGeneration}
           onRename={onRename}
+          onOffset={onOffset}
           onRemove={onRemove}
           onDuration={onDuration}
         />
