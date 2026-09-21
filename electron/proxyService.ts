@@ -3,7 +3,7 @@ import { access, mkdir, stat } from 'node:fs/promises'
 import { cpus } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
-import ffmpegPath from 'ffmpeg-static'
+import { getFfmpegBinary } from './ffmpegBin'
 import { encodePreviewProxyFast, resolveJobParallelism } from './proxyEncode'
 
 export type ProxyKind = 'preview'
@@ -80,10 +80,15 @@ export class ProxyService {
       this.dirReady = (async () => {
         const dir = join(app.getPath('userData'), 'proxies')
         await mkdir(dir, { recursive: true })
+        console.log(`[proxy] proxies dir → ${dir}`)
         return dir
       })()
     }
     return this.dirReady
+  }
+
+  async getProxiesDir(): Promise<string> {
+    return this.proxiesDir()
   }
 
   getStatus(sourcePath: string, kind: ProxyKind = 'preview'): ProxyStatus | null {
@@ -217,9 +222,7 @@ export class ProxyService {
   private async runJob(item: QueueItem): Promise<void> {
     const key = this.statusKey(item.sourcePath, item.kind)
     try {
-      if (!ffmpegPath) {
-        throw new Error('未找到内置 FFmpeg')
-      }
+      const bin = await getFfmpegBinary()
       const s = await stat(item.sourcePath)
       const dir = await this.proxiesDir()
       const proxyPath = join(
@@ -229,7 +232,7 @@ export class ProxyService {
 
       const parallel = resolveJobParallelism(this.cpuCount, this.running, this.queue.length)
       const started = Date.now()
-      const stats = await encodePreviewProxyFast(ffmpegPath, item.sourcePath, proxyPath, parallel)
+      const stats = await encodePreviewProxyFast(bin, item.sourcePath, proxyPath, parallel)
       console.log(
         `[proxy] ready ${item.sourcePath} in ${((Date.now() - started) / 1000).toFixed(1)}s ` +
           `(segments=${stats.segments}, threads=${stats.threads}, duration=${stats.duration ?? '?'})`
@@ -246,6 +249,7 @@ export class ProxyService {
       this.settleWaiters(key, ready)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
+      console.error(`[proxy] failed ${item.sourcePath}`, message)
       const failed: ProxyStatus = {
         kind: item.kind,
         status: 'error',

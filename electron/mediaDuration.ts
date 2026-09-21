@@ -1,5 +1,6 @@
 import { spawn } from 'node:child_process'
-import ffmpegPath from 'ffmpeg-static'
+import { asciiWorkRoot, materializeAsciiInput } from './asciiPath'
+import { getFfmpegBinary } from './ffmpegBin'
 import { isMp4LikePath, readMp4Duration } from './mp4Duration'
 
 /** Parse `Duration: HH:MM:SS.ms` from ffmpeg banner stderr. */
@@ -21,13 +22,8 @@ export interface MediaDurationResult {
   method?: 'mp4-moov' | 'ffmpeg' | 'none'
 }
 
-function probeWithFfmpeg(filePath: string): Promise<number | null> {
+function probeWithFfmpeg(filePath: string, bin: string): Promise<number | null> {
   return new Promise((resolve) => {
-    if (!ffmpegPath) {
-      resolve(null)
-      return
-    }
-
     let settled = false
     const finish = (value: number | null) => {
       if (settled) return
@@ -43,7 +39,7 @@ function probeWithFfmpeg(filePath: string): Promise<number | null> {
 
     // Large OBS files need bigger probe windows when moov/cues sit far from the start.
     const child = spawn(
-      ffmpegPath,
+      bin,
       [
         '-hide_banner',
         '-nostdin',
@@ -59,7 +55,7 @@ function probeWithFfmpeg(filePath: string): Promise<number | null> {
     let stderr = ''
     const timer = setTimeout(() => {
       finish(parseFfmpegDuration(stderr))
-    }, 90_000)
+    }, 45_000)
 
     child.stderr.on('data', (chunk: Buffer) => {
       stderr += chunk.toString()
@@ -90,11 +86,18 @@ export async function probeFileDuration(filePath: string): Promise<MediaDuration
   }
 
   try {
-    const fromFfmpeg = await probeWithFfmpeg(filePath)
-    if (fromFfmpeg !== null) {
-      return { filePath, duration: fromFfmpeg, method: 'ffmpeg' }
+    const bin = await getFfmpegBinary()
+    const workRoot = asciiWorkRoot(filePath)
+    const alias = await materializeAsciiInput(filePath, workRoot)
+    try {
+      const fromFfmpeg = await probeWithFfmpeg(alias.path, bin)
+      if (fromFfmpeg !== null) {
+        return { filePath, duration: fromFfmpeg, method: 'ffmpeg' }
+      }
+      return { filePath, duration: null, method: 'none', error: '未能解析时长' }
+    } finally {
+      await alias.cleanup()
     }
-    return { filePath, duration: null, method: 'none', error: '未能解析时长' }
   } catch (error) {
     return {
       filePath,

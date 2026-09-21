@@ -16,5 +16,6 @@ export const IpcChannel = {
   ensurePreviewProxy: 'proxy:ensurePreview',
   getPreviewProxyStatus: 'proxy:getStatus',
   ensurePreviewProxies: 'proxy:ensureMany',
-  proxyProgress: 'proxy:progress'
+  proxyProgress: 'proxy:progress',
+  getProxyCacheDir: 'proxy:getCacheDir'
 } as const

@@ -69,8 +69,11 @@ export interface PovApi {
       total: number
       sourcePath: string
       status: string
+      cacheDir?: string
+      error?: string
     }) => void
   ) => () => void
+  getProxyCacheDir: () => Promise<string>
   toMediaUrl: (filePath: string) => Promise<string>
   probeMediaDurations: (paths: string[]) => Promise<MediaDurationDto[]>
   ensurePoster: (filePath: string, atSeconds?: number) => Promise<PosterDto>

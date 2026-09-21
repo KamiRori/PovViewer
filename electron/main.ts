@@ -324,6 +324,7 @@ function registerIpc(): void {
     const list = paths.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
     const total = list.length
     let completed = 0
+    const cacheDir = await proxyService.getProxiesDir()
     const jobs = list.map(async (entry) => {
       const status = await proxyService.ensurePreview(entry)
       if (status.status === 'ready' && status.proxyPath) {
@@ -334,7 +335,9 @@ function registerIpc(): void {
         completed,
         total,
         sourcePath: entry,
-        status: status.status
+        status: status.status,
+        cacheDir,
+        error: status.error
       }
       for (const window of BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed()) {
@@ -345,6 +348,8 @@ function registerIpc(): void {
     })
     return Promise.all(jobs)
   })
+
+  ipcMain.handle(IpcChannel.getProxyCacheDir, async () => proxyService.getProxiesDir())
 }
 
 app.whenReady().then(() => {

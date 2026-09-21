@@ -1,9 +1,14 @@
 import { createHash } from 'node:crypto'
-import { spawn } from 'node:child_process'
 import { access, mkdir, readFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { app } from 'electron'
-import ffmpegPath from 'ffmpeg-static'
+import {
+  asciiWorkRoot,
+  materializeAsciiInput,
+  withAsciiOutput
+} from './asciiPath'
+import { getFfmpegBinary } from './ffmpegBin'
+import { spawn } from 'node:child_process'
 
 export interface PosterStatus {
   filePath: string
@@ -62,7 +67,10 @@ export class PosterService {
         }
       }
 
-      if (!ffmpegPath) {
+      let bin: string
+      try {
+        bin = await getFfmpegBinary()
+      } catch {
         const failed: PosterStatus = {
           filePath: sourcePath,
           posterPath: null,
@@ -92,7 +100,7 @@ export class PosterService {
       }
 
       try {
-        await extractPoster(ffmpegPath, sourcePath, posterPath, safeAt)
+        await extractPoster(bin, sourcePath, posterPath, safeAt)
         const dataUrl = await this.toDataUrl(posterPath)
         const ready: PosterStatus = {
           filePath: sourcePath,
@@ -125,49 +133,57 @@ export class PosterService {
   }
 }
 
-function extractPoster(
+async function extractPoster(
   bin: string,
   input: string,
   output: string,
   atSeconds: number
 ): Promise<void> {
-  return new Promise((resolve, reject) => {
-    // -ss before -i: keyframe seek, critical for multi‑hour files.
-    const args = [
-      '-hide_banner',
-      '-nostdin',
-      '-ss',
-      String(Math.max(0, atSeconds)),
-      '-i',
-      input,
-      '-an',
-      '-frames:v',
-      '1',
-      '-vf',
-      'scale=320:-2',
-      '-q:v',
-      '8',
-      '-y',
-      output
-    ]
-    const child = spawn(bin, args, { windowsHide: true })
-    let stderr = ''
-    const timer = setTimeout(() => {
-      child.kill()
-      reject(new Error('生成封面超时'))
-    }, 25_000)
-    child.stderr.on('data', (chunk: Buffer) => {
-      stderr += chunk.toString()
-      if (stderr.length > 4000) stderr = stderr.slice(-4000)
+  const workRoot = asciiWorkRoot(output)
+  const inputAlias = await materializeAsciiInput(input, workRoot)
+  try {
+    await withAsciiOutput(output, workRoot, async (asciiOut) => {
+      await new Promise<void>((resolve, reject) => {
+        // -ss before -i: keyframe seek, critical for multi‑hour files.
+        const args = [
+          '-hide_banner',
+          '-nostdin',
+          '-ss',
+          String(Math.max(0, atSeconds)),
+          '-i',
+          inputAlias.path,
+          '-an',
+          '-frames:v',
+          '1',
+          '-vf',
+          'scale=320:-2',
+          '-q:v',
+          '8',
+          '-y',
+          asciiOut
+        ]
+        const child = spawn(bin, args, { windowsHide: true })
+        let stderr = ''
+        const timer = setTimeout(() => {
+          child.kill()
+          reject(new Error('生成封面超时'))
+        }, 25_000)
+        child.stderr.on('data', (chunk: Buffer) => {
+          stderr += chunk.toString()
+          if (stderr.length > 4000) stderr = stderr.slice(-4000)
+        })
+        child.on('error', (error) => {
+          clearTimeout(timer)
+          reject(error)
+        })
+        child.on('close', (code) => {
+          clearTimeout(timer)
+          if (code === 0) resolve()
+          else reject(new Error(`FFmpeg 退出码 ${code}: ${stderr.trim() || '无输出'}`))
+        })
+      })
     })
-    child.on('error', (error) => {
-      clearTimeout(timer)
-      reject(error)
-    })
-    child.on('close', (code) => {
-      clearTimeout(timer)
-      if (code === 0) resolve()
-      else reject(new Error(`FFmpeg 退出码 ${code}: ${stderr.trim() || '无输出'}`))
-    })
-  })
+  } finally {
+    await inputAlias.cleanup()
+  }
 }

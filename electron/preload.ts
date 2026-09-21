@@ -45,11 +45,20 @@ const povApi = {
       total: number
       sourcePath: string
       status: string
+      cacheDir?: string
+      error?: string
     }) => void
   ): (() => void) => {
     const handler = (
       _event: Electron.IpcRendererEvent,
-      payload: { completed: number; total: number; sourcePath: string; status: string }
+      payload: {
+        completed: number
+        total: number
+        sourcePath: string
+        status: string
+        cacheDir?: string
+        error?: string
+      }
     ): void => {
       listener(payload)
     }
@@ -58,6 +67,7 @@ const povApi = {
       ipcRenderer.removeListener(IpcChannel.proxyProgress, handler)
     }
   },
+  getProxyCacheDir: (): Promise<string> => ipcRenderer.invoke(IpcChannel.getProxyCacheDir),
   toMediaUrl: (filePath: string): Promise<string> => ipcRenderer.invoke(IpcChannel.toMediaUrl, filePath),
   probeMediaDurations: (
     paths: string[]

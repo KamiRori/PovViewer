@@ -45,8 +45,10 @@ export function App() {
   const visible = state.povs.filter((pov) => pov.enabled)
 
   useEffect(() => {
-    return window.povApi.onProxyProgress(({ completed, total }) => {
-      setHint(`正在生成网格预览代理（${completed}/${total}）…`)
+    return window.povApi.onProxyProgress(({ completed, total, cacheDir, status, error }) => {
+      const where = cacheDir ? ` → ${cacheDir}` : ''
+      const detail = status === 'error' && error ? `（失败：${error.slice(0, 80)}）` : ''
+      setHint(`正在生成网格预览代理（${completed}/${total}）${where}${detail}`)
     })
   }, [])
 
@@ -243,21 +245,31 @@ export function App() {
     const paths = state.povs.filter((pov) => !pov.missing).map((pov) => pov.filePath)
     if (paths.length === 0) return
     setProxyBusy(true)
-    setHint(`正在生成网格预览代理（0/${paths.length}）…`)
+    let cacheDir = ''
+    try {
+      cacheDir = await window.povApi.getProxyCacheDir()
+    } catch {
+      cacheDir = ''
+    }
+    setHint(
+      cacheDir
+        ? `正在生成网格预览代理（0/${paths.length}）→ ${cacheDir}`
+        : `正在生成网格预览代理（0/${paths.length}）…`
+    )
     try {
       const results = await window.povApi.ensurePreviewProxies(paths)
       const ready = results.filter((entry) => entry.status === 'ready').length
       const failed = results.filter((entry) => entry.status === 'error' || entry.status === 'missing')
-        .length
+      const firstError = failed.find((entry) => entry.error)?.error
       setHint(
-        failed > 0
-          ? `预览代理：${ready} 就绪，${failed} 失败（写入应用缓存，未改源文件）`
-          : `预览代理已就绪：${ready} 个（网格将自动改用低分辨率预览；若仍无法播放请再点一次重新生成）`
+        failed.length > 0
+          ? `预览代理：${ready} 就绪，${failed.length} 失败${firstError ? `（${firstError.slice(0, 120)}）` : ''}${cacheDir ? ` @ ${cacheDir}` : ''}`
+          : `预览代理已就绪：${ready} 个${cacheDir ? ` @ ${cacheDir}` : ''}`
       )
       setProxyEpoch((value) => value + 1)
     } catch (error) {
       console.error('[proxy] ensure failed', error)
-      setHint('生成预览代理失败')
+      setHint(`生成预览代理失败${error instanceof Error ? `：${error.message}` : ''}`)
     } finally {
       setProxyBusy(false)
     }
