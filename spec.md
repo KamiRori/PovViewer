@@ -1,6 +1,6 @@
 # Minecraft 多 POV 同步监看器 — 产品规格
 
-状态：待确认后进入实现。本文件是产品与验收的唯一依据。实现细节见 `docs/architecture.md`。Phase 1 的执行范围见 `docs/phase-1-tasks.md`。
+状态：Phase 1–6 已落地（含 Windows 打包配置）。本文件仍是产品与验收的唯一依据。实现细节见 `docs/architecture.md`；各阶段任务见 `docs/phase-*-tasks.md`。
 
 ## 1. 产品定位
 
