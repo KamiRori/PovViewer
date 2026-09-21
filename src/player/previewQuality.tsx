@@ -9,63 +9,66 @@ import {
 
 export type PreviewQualityPreset = 'high' | 'medium' | 'low'
 
-/** continuous = HTML5 play(); sampled = paused seek-to-clock (far less GPU). */
+/**
+ * continuous = native video.play() (HW decode + overlay, usually cheaper).
+ * sampled = paused + frequent currentTime seeks (often MORE expensive on GPU).
+ */
 export type PreviewPlaybackMode = 'continuous' | 'sampled'
 
 export interface PreviewQualitySettings {
   preset: PreviewQualityPreset
   playbackMode: PreviewPlaybackMode
-  /** Sample refresh cap when playbackMode is sampled. */
+  /** Only used when playbackMode is sampled (advanced / not recommended). */
   maxFps: number
+  /** Multiplier on hard-seek threshold; higher = fewer seeks, smoother under load. */
+  hardSeekSlack: number
+  /** Soft rate nudges; can cause churn when many videos fight the clock. */
+  softSync: boolean
 }
 
+/**
+ * Prefer continuous for all presets. Frequent seek-sampling was measured to push GPU
+ * near 100% while continuous sat around ~30% on the same clips.
+ */
 export const PREVIEW_QUALITY_PRESETS: Record<PreviewQualityPreset, PreviewQualitySettings> = {
   high: {
     preset: 'high',
     playbackMode: 'continuous',
-    maxFps: 60
+    maxFps: 60,
+    hardSeekSlack: 1,
+    softSync: true
   },
   medium: {
     preset: 'medium',
-    playbackMode: 'sampled',
-    maxFps: 10
+    playbackMode: 'continuous',
+    maxFps: 30,
+    hardSeekSlack: 1.6,
+    softSync: true
   },
   low: {
     preset: 'low',
-    playbackMode: 'sampled',
-    maxFps: 5
+    playbackMode: 'continuous',
+    maxFps: 15,
+    hardSeekSlack: 2.4,
+    softSync: false
   }
 }
 
 interface PreviewQualityApi {
   settings: PreviewQualitySettings
   setPreset: (preset: PreviewQualityPreset) => void
-  setMaxFps: (value: number) => void
 }
 
 const PreviewQualityContext = createContext<PreviewQualityApi | null>(null)
 
 export function PreviewQualityProvider({ children }: { children: ReactNode }) {
-  const [settings, setSettings] = useState<PreviewQualitySettings>(PREVIEW_QUALITY_PRESETS.medium)
+  const [settings, setSettings] = useState<PreviewQualitySettings>(PREVIEW_QUALITY_PRESETS.high)
 
   const setPreset = useCallback((preset: PreviewQualityPreset) => {
     setSettings(PREVIEW_QUALITY_PRESETS[preset])
   }, [])
 
-  const setMaxFps = useCallback((value: number) => {
-    const maxFps = Math.max(3, Math.min(30, Math.round(value)))
-    setSettings((current) => ({
-      ...current,
-      preset: current.preset === 'high' ? 'medium' : current.preset,
-      playbackMode: 'sampled',
-      maxFps
-    }))
-  }, [])
-
-  const api = useMemo(
-    () => ({ settings, setPreset, setMaxFps }),
-    [settings, setPreset, setMaxFps]
-  )
+  const api = useMemo(() => ({ settings, setPreset }), [settings, setPreset])
 
   return <PreviewQualityContext.Provider value={api}>{children}</PreviewQualityContext.Provider>
 }

@@ -9,6 +9,7 @@ import {
 } from '../timeline/playbackMath'
 import { useMasterTimeRef } from '../timeline/store'
 import { useArmedCount } from './playbackArm'
+import { useDecodeLive } from './decodeBudget'
 import { recordContinuousPlay, recordHardSeek, recordSampleSeek } from './perfCounters'
 import { usePreviewQuality } from './previewQuality'
 import {
@@ -36,6 +37,10 @@ interface VideoSurfaceProps {
   seekGeneration: number
   /** When false, release the decoder and show a still frame only. */
   armed: boolean
+  /** Effective output mute for this surface. */
+  muted: boolean
+  /** Layout role — focus-main stays high priority; focus-rail follows with continuous preview. */
+  variant?: 'grid' | 'focus-main' | 'focus-rail'
   onDuration: (duration: number) => void
   onError: () => void
 }
@@ -50,6 +55,8 @@ function VideoSurfaceImpl({
   playbackRate,
   seekGeneration,
   armed,
+  muted,
+  variant = 'grid',
   onDuration,
   onError
 }: VideoSurfaceProps) {
@@ -87,10 +94,20 @@ function VideoSurfaceImpl({
   armedRef.current = armed
 
   const sampled = settings.playbackMode === 'sampled'
-  /** Only armed cards keep a live decoder pipeline attached. */
-  const attachMedia = armed && visible
-  const live = attachMedia && !sampled && playing
+  /** Focus surfaces keep a decoder; grid uses the user 「参与」 toggle. */
+  const forceAttach = variant === 'focus-main' || variant === 'focus-rail'
+  const wantsSlot = visible && (armed || forceAttach) && playing
+  const slotPriority =
+    variant === 'focus-main' ? 20_000 : variant === 'focus-rail' ? 300 : 1_000 + (visible ? 500 : 0)
+  const liveSlot = useDecodeLive(povId, wantsSlot, slotPriority)
+  // While playing, only budget winners keep a decoder. When paused, armed cards may attach for scrub.
+  const attachMedia =
+    visible &&
+    (armed || forceAttach) &&
+    (variant === 'focus-main' || !playing || liveSlot)
+  const live = attachMedia && !sampled && playing && (variant === 'focus-main' || liveSlot)
   liveRef.current = live
+  const sampleFps = settings.maxFps
 
   useEffect(() => {
     const host = hostRef.current
@@ -243,7 +260,7 @@ function VideoSurfaceImpl({
     let closed = false
     let timer = 0
     let safetyTimer = 0
-    const interval = 1000 / Math.max(3, settings.maxFps)
+    const interval = 1000 / Math.max(3, sampleFps)
     const stagger = Math.abs(hashString(povId)) % Math.max(1, Math.floor(interval))
 
     const schedule = (delay: number) => {
@@ -322,7 +339,7 @@ function VideoSurfaceImpl({
       releaseSampleSeek(povId)
       video.pause()
     }
-  }, [sampled, settings.maxFps, playing, attachMedia, mediaReady, masterTimeRef, povId])
+  }, [sampled, sampleFps, playing, attachMedia, mediaReady, masterTimeRef, povId])
 
   useEffect(() => {
     if (sampled || !attachMedia) return
@@ -351,7 +368,8 @@ function VideoSurfaceImpl({
 
     let frame = 0
     let lastSoftCheck = 0
-    const hardThreshold = hardSeekThresholdSeconds(armedCount)
+    const hardThreshold =
+      hardSeekThresholdSeconds(armedCount) * Math.max(1, settings.hardSeekSlack)
     const tick = (stamp: number) => {
       const nextStatus = povPlaybackStatus(
         masterTimeRef.current,
@@ -396,7 +414,7 @@ function VideoSurfaceImpl({
         } else if (stamp - lastSoftCheck > 300) {
           lastSoftCheck = stamp
           const action = syncAction(video.currentTime, expected)
-          const softAllowed = now >= softSyncSuppressUntilRef.current
+          const softAllowed = settings.softSync && now >= softSyncSuppressUntilRef.current
           if (softAllowed && action === 'soft') {
             video.playbackRate = softPlaybackRate(baseRateRef.current, video.currentTime, expected)
           } else if (video.playbackRate !== baseRateRef.current) {
@@ -418,14 +436,14 @@ function VideoSurfaceImpl({
       video.pause()
       playRequestRef.current = null
     }
-  }, [sampled, playing, live, attachMedia, mediaReady, masterTimeRef, armedCount, povId])
+  }, [sampled, playing, live, attachMedia, mediaReady, masterTimeRef, armedCount, povId, settings.hardSeekSlack, settings.softSync])
 
   return (
     <div ref={hostRef} className="video-host">
       <video
         ref={videoRef}
         className={attachMedia ? 'video-surface' : 'video-surface video-surface-detached'}
-        muted
+        muted={muted}
         playsInline
         preload="none"
         tabIndex={-1}
@@ -447,9 +465,10 @@ function VideoSurfaceImpl({
         className={`video-still${attachMedia ? ' video-still-hidden' : ''}${hasStill ? '' : ' is-empty'}`}
         aria-hidden={attachMedia}
       />
-      {!attachMedia ? <p className="decode-badge">已卸载解码器</p> : null}
+      {!attachMedia && armed && playing ? <p className="decode-badge">排队解码</p> : null}
+      {!attachMedia && !armed ? <p className="decode-badge">已卸载解码器</p> : null}
       {sampled && attachMedia && playing ? (
-        <p className="decode-badge decode-badge-quality">{settings.maxFps}fps 采样</p>
+        <p className="decode-badge decode-badge-quality">{sampleFps}fps 采样</p>
       ) : null}
     </div>
   )
@@ -599,6 +618,8 @@ export const VideoSurface = memo(VideoSurfaceImpl, (prev, next) => {
     prev.playing === next.playing &&
     prev.playbackRate === next.playbackRate &&
     prev.seekGeneration === next.seekGeneration &&
-    prev.armed === next.armed
+    prev.armed === next.armed &&
+    prev.muted === next.muted &&
+    prev.variant === next.variant
   )
 })

@@ -1,6 +1,6 @@
 import { createContext, useContext, useMemo, useReducer, type ReactNode } from 'react'
 import type { SyncResult } from '../sync/types'
-import type { ColumnCount } from './types'
+import type { ColumnCount, POVRuntime } from './types'
 import { initialProjectState, projectReducer, type ProjectState } from './reducer'
 
 interface ProjectApi {
@@ -11,8 +11,14 @@ interface ProjectApi {
   setColumns: (columns: ColumnCount) => void
   setDuration: (id: string, duration: number) => void
   setOffset: (id: string, offset: number) => void
+  setMuted: (id: string, muted: boolean) => void
+  soloAudio: (id: string) => void
   applySyncResults: (results: SyncResult[]) => void
   clearSyncReport: () => void
+  loadProject: (povs: POVRuntime[], projectPath: string | null) => void
+  setProjectPath: (projectPath: string | null) => void
+  setMissing: (id: string, missing: boolean) => void
+  relocate: (id: string, filePath: string) => void
 }
 
 const ProjectContext = createContext<ProjectApi | null>(null)
@@ -28,8 +34,14 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       setColumns: (columns) => dispatch({ type: 'setColumns', columns }),
       setDuration: (id, duration) => dispatch({ type: 'metadata', id, duration }),
       setOffset: (id, offset) => dispatch({ type: 'setOffset', id, offset }),
+      setMuted: (id, muted) => dispatch({ type: 'setMuted', id, muted }),
+      soloAudio: (id) => dispatch({ type: 'soloAudio', id }),
       applySyncResults: (results) => dispatch({ type: 'applySync', results }),
-      clearSyncReport: () => dispatch({ type: 'clearSyncReport' })
+      clearSyncReport: () => dispatch({ type: 'clearSyncReport' }),
+      loadProject: (povs, projectPath) => dispatch({ type: 'loadProject', povs, projectPath }),
+      setProjectPath: (projectPath) => dispatch({ type: 'setProjectPath', projectPath }),
+      setMissing: (id, missing) => dispatch({ type: 'setMissing', id, missing }),
+      relocate: (id, filePath) => dispatch({ type: 'relocate', id, filePath })
     }),
     [state]
   )

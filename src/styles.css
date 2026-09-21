@@ -214,6 +214,106 @@ main {
   box-shadow: 0 0 0 2px rgba(122, 162, 255, 0.45);
 }
 
+.pov-card.is-highlighted {
+  border-color: #c8d4ea;
+  box-shadow: 0 0 0 2px rgba(232, 236, 244, 0.4);
+}
+
+.pov-card.is-armed.is-highlighted {
+  border-color: var(--accent);
+  box-shadow:
+    0 0 0 2px rgba(122, 162, 255, 0.55),
+    0 0 0 5px rgba(232, 236, 244, 0.22);
+}
+
+.pov-card.is-focus-main {
+  height: 100%;
+}
+
+.pov-card.is-focus-rail {
+  padding: 8px;
+}
+
+.pov-card.is-focus-rail .offset-row,
+.pov-card.is-focus-rail .remove {
+  display: none;
+}
+
+.pov-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.pov-actions button.audio.is-on {
+  border-color: var(--accent);
+}
+
+.search input {
+  width: 140px;
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: 6px;
+  padding: 6px 10px;
+  color: inherit;
+}
+
+.focus-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 14px;
+  min-height: 0;
+  height: 100%;
+}
+
+.focus-main {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.focus-banner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--muted);
+}
+
+.focus-banner strong {
+  color: #e7e9ee;
+  font-size: 16px;
+}
+
+.focus-rail {
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-right: 4px;
+}
+
+.focus-missing,
+.empty-filter {
+  color: var(--muted);
+  padding: 24px;
+}
+
+.app-focus main {
+  min-height: 0;
+}
+
+@media (max-width: 1100px) {
+  .focus-layout {
+    grid-template-columns: 1fr;
+  }
+
+  .focus-rail {
+    max-height: 280px;
+  }
+}
+
 .pov-card input,
 .pov-card textarea,
 .pov-card select {
@@ -345,6 +445,42 @@ main {
   padding: 8px;
 }
 
+.pov-missing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  height: 100%;
+  padding: 12px;
+  text-align: center;
+}
+
+.pov-missing-title {
+  margin: 0;
+  color: #e6c27a;
+  font-weight: 650;
+}
+
+.pov-missing-name {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.pov-missing button {
+  border: 1px solid var(--line);
+  background: var(--panel-2);
+  border-radius: 6px;
+  padding: 6px 10px;
+  cursor: pointer;
+  color: #e7e9ee;
+}
+
 .name-input {
   width: 100%;
   border: 1px solid transparent;
@@ -378,7 +514,6 @@ main {
 
 .remove {
   align-self: flex-start;
-  color: var(--danger);
 }
 
 .visually-hidden {
@@ -426,12 +561,20 @@ main {
 }
 
 .timeline-controls button,
+.focus-banner > button,
+.focus-back,
+.pov-actions button,
 .speed select {
   border: 1px solid var(--line);
   background: var(--panel-2);
   border-radius: 6px;
   padding: 6px 10px;
   cursor: pointer;
+  color: #e7e9ee;
+}
+
+.pov-actions button.remove {
+  color: var(--danger);
 }
 
 .timeline-controls button:disabled,

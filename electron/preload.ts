@@ -2,6 +2,14 @@ import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { IpcChannel } from './channels'
 import { DEBUG_METRICS_PUSH, type DebugSnapshot, type FeaturePerfReport } from './debugTypes'
 
+export interface ProxyStatusDto {
+  kind: 'preview'
+  status: 'ready' | 'pending' | 'error' | 'missing'
+  sourcePath: string
+  proxyPath: string | null
+  error?: string
+}
+
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mkv', '.mov', '.webm'])
 
 function hasVideoExtension(filePath: string): boolean {
@@ -17,6 +25,20 @@ const povApi = {
     ipcRenderer.invoke(IpcChannel.selectJsonFile, title),
   readTextFile: (filePath: string): Promise<string> =>
     ipcRenderer.invoke(IpcChannel.readTextFile, filePath),
+  writeTextFile: (filePath: string, text: string): Promise<boolean> =>
+    ipcRenderer.invoke(IpcChannel.writeTextFile, filePath, text),
+  pathExists: (filePath: string): Promise<boolean> =>
+    ipcRenderer.invoke(IpcChannel.pathExists, filePath),
+  saveJsonFile: (defaultName: string): Promise<string | null> =>
+    ipcRenderer.invoke(IpcChannel.saveJsonFile, defaultName),
+  selectReplacementFile: (currentPath: string): Promise<string | null> =>
+    ipcRenderer.invoke(IpcChannel.selectReplacementFile, currentPath),
+  ensurePreviewProxy: (filePath: string): Promise<ProxyStatusDto> =>
+    ipcRenderer.invoke(IpcChannel.ensurePreviewProxy, filePath),
+  getPreviewProxyStatus: (filePath: string): Promise<ProxyStatusDto | null> =>
+    ipcRenderer.invoke(IpcChannel.getPreviewProxyStatus, filePath),
+  ensurePreviewProxies: (paths: string[]): Promise<ProxyStatusDto[]> =>
+    ipcRenderer.invoke(IpcChannel.ensurePreviewProxies, paths),
   toMediaUrl: (filePath: string): Promise<string> => ipcRenderer.invoke(IpcChannel.toMediaUrl, filePath),
   /**
    * Must receive the original File from the drop event, one at a time.
