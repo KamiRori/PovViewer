@@ -32,6 +32,9 @@
     "vite": "^7.2.6",
     "vitest": "^4.1.11"
   },
+  "overrides": {
+    "@noble/hashes": "1.8.0"
+  },
   "build": {
     "appId": "com.minecraftpovviewer.app",
     "productName": "MinecraftPOVViewer",
