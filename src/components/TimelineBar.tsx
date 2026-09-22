@@ -16,8 +16,10 @@ import type { TimelineSelection } from '../timeline/selection'
 import {
   clampViewport,
   fullViewport,
+  panViewport,
   type TimelineViewport,
-  viewportToRange
+  viewportToRange,
+  viewportsEqual
 } from '../timeline/viewport'
 import { TimelineTracks } from './TimelineTracks'
 
@@ -62,6 +64,7 @@ interface TimelineBarProps {
   onAddExportRange: (id: string, range: TimelineSelection) => void
   onUpdateExportRange: (id: string, selectionId: string, range: TimelineSelection) => void
   onRemoveExportRange: (id: string, selectionId: string) => void
+  onSetExportRangeLocked: (id: string, selectionId: string, locked: boolean) => void
   onReorder: (fromId: string, toId: string) => void
 }
 
@@ -81,6 +84,7 @@ export function TimelineBar({
   onAddExportRange,
   onUpdateExportRange,
   onRemoveExportRange,
+  onSetExportRangeLocked,
   onReorder
 }: TimelineBarProps) {
   const span = Math.max(range.duration, 0.001)
@@ -101,6 +105,7 @@ export function TimelineBar({
   const [viewport, setViewport] = useState<TimelineViewport>(() => fullViewport(range))
   const resizeRef = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null)
   const rangeKeyRef = useRef(`${range.start}:${range.end}`)
+  const viewportInteractRef = useRef(false)
 
   useEffect(() => {
     setPanelHeight(readStoredPanelHeight())
@@ -117,6 +122,13 @@ export function TimelineBar({
   useEffect(() => {
     const key = `${range.start}:${range.end}`
     const rangeChanged = rangeKeyRef.current !== key
+    if (!rangeChanged && range.duration > 0) return
+    // Don't yank the overview window back to "fit all" while the user is dragging it.
+    if (viewportInteractRef.current && rangeChanged) {
+      rangeKeyRef.current = key
+      setViewport((current) => clampViewport(current.start, current.end, range))
+      return
+    }
     rangeKeyRef.current = key
     setViewport((current) => {
       if (range.duration <= 0) return fullViewport(range)
@@ -131,6 +143,18 @@ export function TimelineBar({
     } catch {
       // ignore quota / private mode
     }
+  }, [])
+
+  const onViewportChange = useCallback((next: TimelineViewport) => {
+    // Soft edge clamp only (preserve span). Never re-apply minSpan here — that path
+    // treats float-shrunk width as "too small" and snaps the window to full.start,
+    // which is exactly the overview whole-window pan twitch.
+    const clamped = panViewport(next, 0, range)
+    setViewport((current) => (viewportsEqual(current, clamped) ? current : clamped))
+  }, [range])
+
+  const onViewportInteract = useCallback((active: boolean) => {
+    viewportInteractRef.current = active
   }, [])
 
   function onResizePointerDown(event: ReactPointerEvent<HTMLDivElement>): void {
@@ -208,7 +232,7 @@ export function TimelineBar({
             ? '当前筛选没有匹配的时间轴'
             : undefined
         }
-        onViewportChange={setViewport}
+        onViewportChange={onViewportChange}
         onScrub={onScrub}
         onCommitScrub={onCommitScrub}
         onSelect={(id) => {
@@ -217,7 +241,9 @@ export function TimelineBar({
         onAddExportRange={onAddExportRange}
         onUpdateExportRange={onUpdateExportRange}
         onRemoveExportRange={onRemoveExportRange}
+        onSetExportRangeLocked={onSetExportRangeLocked}
         onReorder={onReorder}
+        onViewportInteract={onViewportInteract}
       />
 
       <div className="timeline-controls">

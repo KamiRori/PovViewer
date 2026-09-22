@@ -37,6 +37,7 @@ interface ProjectApi {
   addExportRange: (id: string, range: TimelineSelection) => void
   updateExportRange: (id: string, selectionId: string, range: TimelineSelection) => void
   removeExportRange: (id: string, selectionId: string) => void
+  setExportRangeLocked: (id: string, selectionId: string, locked: boolean) => void
   reorder: (fromId: string, toId: string) => void
   applySyncResults: (results: SyncResult[]) => void
   clearSyncReport: () => void
@@ -105,6 +106,11 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       dispatch({ type: 'removeExportRange', id, selectionId }),
     []
   )
+  const setExportRangeLocked = useCallback(
+    (id: string, selectionId: string, locked: boolean) =>
+      dispatch({ type: 'setExportRangeLocked', id, selectionId, locked }),
+    []
+  )
   const reorder = useCallback(
     (fromId: string, toId: string) => dispatch({ type: 'reorder', fromId, toId }),
     []
@@ -152,6 +158,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       addExportRange,
       updateExportRange,
       removeExportRange,
+      setExportRangeLocked,
       reorder,
       applySyncResults,
       clearSyncReport,
@@ -178,6 +185,7 @@ export function ProjectProvider({ children }: { children: ReactNode }) {
       addExportRange,
       updateExportRange,
       removeExportRange,
+      setExportRangeLocked,
       reorder,
       applySyncResults,
       clearSyncReport,

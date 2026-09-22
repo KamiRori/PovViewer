@@ -1427,6 +1427,46 @@ main::-webkit-scrollbar-thumb:hover {
   --sel-focus-strong: #ffffff;
   --sel-focus-soft: rgba(255, 255, 255, 0.5);
   --sel-focus-softer: rgba(255, 255, 255, 0.2);
+  /* Unlocked: solid wash + dashed frame (editable). */
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--sel-soft) 88%, #fff) 0%,
+      color-mix(in srgb, var(--sel-softer) 70%, transparent) 100%
+    );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--sel-strong) 55%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--sel-strong) 28%, transparent);
+  outline: 1px dashed color-mix(in srgb, var(--sel-strong) 55%, transparent);
+  outline-offset: -3px;
+  cursor: grab;
+  touch-action: none;
+  min-width: 0;
+  pointer-events: auto;
+}
+
+.timeline-selection.is-focused {
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--sel-focus-soft) 90%, #fff) 0%,
+      color-mix(in srgb, var(--sel-focus-softer) 75%, transparent) 100%
+    );
+  box-shadow:
+    inset 0 0 0 1px color-mix(in srgb, var(--sel-focus-strong) 70%, transparent),
+    0 0 0 1px color-mix(in srgb, var(--sel-focus-strong) 35%, transparent);
+  outline-color: color-mix(in srgb, var(--sel-focus-strong) 70%, transparent);
+}
+
+.timeline-selection:active {
+  cursor: grabbing;
+}
+
+.timeline-selection.is-locked {
+  cursor: default;
+  opacity: 0.92;
+  outline: none;
+  /* Locked: diagonal hatch. */
   background:
     repeating-linear-gradient(
       -52deg,
@@ -1436,13 +1476,9 @@ main::-webkit-scrollbar-thumb:hover {
   box-shadow:
     inset 0 0 0 1px var(--sel-strong),
     inset 0 1px 0 rgba(255, 255, 255, 0.22);
-  cursor: grab;
-  touch-action: none;
-  min-width: 0;
-  pointer-events: auto;
 }
 
-.timeline-selection.is-focused {
+.timeline-selection.is-locked.is-focused {
   background:
     repeating-linear-gradient(
       -52deg,
@@ -1454,8 +1490,37 @@ main::-webkit-scrollbar-thumb:hover {
     inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
-.timeline-selection:active {
-  cursor: grabbing;
+.timeline-selection.is-locked:active {
+  cursor: default;
+}
+
+.timeline-selection-lock {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  z-index: 2;
+  width: 8px;
+  height: 7px;
+  transform: translate(-50%, -40%);
+  border: 1.5px solid color-mix(in srgb, var(--sel-strong) 85%, #fff);
+  border-radius: 1px 1px 2px 2px;
+  box-sizing: border-box;
+  pointer-events: none;
+  opacity: 0.9;
+}
+
+.timeline-selection-lock::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  bottom: 100%;
+  width: 5px;
+  height: 4px;
+  margin-left: -2.5px;
+  border: 1.5px solid color-mix(in srgb, var(--sel-strong) 85%, #fff);
+  border-bottom: none;
+  border-radius: 3px 3px 0 0;
+  box-sizing: border-box;
 }
 
 .timeline-selection-cap {
@@ -1752,6 +1817,16 @@ main::-webkit-scrollbar-thumb:hover {
   cursor: not-allowed;
 }
 
+.timeline-zoom-track.is-viewport-dragging .timeline-zoom-playhead {
+  /* Keep pan/resize from fighting the playhead once the window slides past it. */
+  pointer-events: none;
+  z-index: 1;
+}
+
+.timeline-zoom-track.is-viewport-dragging .timeline-zoom-window {
+  z-index: 4;
+}
+
 .timeline-zoom-lanes {
   position: absolute;
   inset: 8px 0 8px;
@@ -1794,6 +1869,19 @@ main::-webkit-scrollbar-thumb:hover {
   bottom: 0;
   border-radius: 2px;
   --zoom-sel: #e8edf7;
+  /* Unlocked overview chip: soft fill + dashed edge. */
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--zoom-sel) 38%, transparent),
+    color-mix(in srgb, var(--zoom-sel) 18%, transparent)
+  );
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--zoom-sel) 45%, transparent);
+  outline: 1px dashed color-mix(in srgb, var(--zoom-sel) 50%, transparent);
+  outline-offset: -2px;
+}
+
+.timeline-zoom-export.is-locked {
+  outline: none;
   background: color-mix(in srgb, var(--zoom-sel) 28%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--zoom-sel) 40%, transparent);
 }

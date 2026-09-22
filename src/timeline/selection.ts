@@ -8,6 +8,8 @@ export interface TimelineSelection {
 /** Named export in/out on the master timeline (multiple per POV). */
 export interface ExportSelection extends TimelineSelection {
   id: string
+  /** When true, the range cannot be moved or resized until unlocked. */
+  locked?: boolean
 }
 
 const EPS = 1e-6
@@ -240,7 +242,7 @@ export function createExportSelection(
   id = crypto.randomUUID()
 ): ExportSelection {
   const normalized = normalizeSelection(start, end)
-  return { id, start: normalized.start, end: normalized.end }
+  return { id, start: normalized.start, end: normalized.end, locked: false }
 }
 
 /** Accepts a single persisted export range; normalizes endpoint order. */
@@ -259,7 +261,12 @@ function parseOneExportSelection(value: unknown): ExportSelection | null {
     typeof record.id === 'string' && record.id.trim() !== ''
       ? record.id
       : crypto.randomUUID()
-  return { id, start: normalized.start, end: normalized.end }
+  return {
+    id,
+    start: normalized.start,
+    end: normalized.end,
+    locked: record.locked === true
+  }
 }
 
 /** Sort by start and shrink/drop ranges so none overlap (legacy repair). */

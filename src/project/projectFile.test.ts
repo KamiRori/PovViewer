@@ -74,6 +74,17 @@ describe('serializeProject', () => {
     ])
     expect(json.povs[0]).not.toHaveProperty('exportRange')
   })
+  it('persists locked export ranges', () => {
+    const json = serializeProject([
+      samplePov({
+        exportRanges: [{ id: 'r1', start: 12, end: 40, locked: true }]
+      })
+    ])
+    expect(json.povs[0]?.exportRanges).toEqual([
+      { id: 'r1', start: 12, end: 40, locked: true }
+    ])
+  })
+
   it('persists markerColor', () => {
     const json = serializeProject([samplePov({ markerColor: 'cyan' })])
     expect(json.povs[0]?.markerColor).toBe('cyan')
@@ -142,9 +153,37 @@ describe('parseProjectJson', () => {
     expect(parsed.ok).toBe(true)
     if (!parsed.ok) return
     expect(parsed.runtime[0]?.exportRanges).toEqual([
-      { id: 'a', start: 10, end: 50 },
-      { id: 'b', start: 60, end: 80 }
+      { id: 'a', start: 10, end: 50, locked: false },
+      { id: 'b', start: 60, end: 80, locked: false }
     ])
+  })
+
+  it('loads locked flag on exportRanges', () => {
+    const parsed = parseProjectJson(
+      JSON.stringify({
+        version: 1,
+        masterDuration: 120,
+        povs: [
+          {
+            id: 'alice',
+            playerName: 'Alice',
+            filePath: 'D:/POV/Alice.mp4',
+            offset: 0,
+            enabled: true,
+            muted: true,
+            exportRanges: [{ id: 'a', start: 10, end: 50, locked: true }]
+          }
+        ]
+      })
+    )
+    expect(parsed.ok).toBe(true)
+    if (!parsed.ok) return
+    expect(parsed.runtime[0]?.exportRanges[0]).toMatchObject({
+      id: 'a',
+      start: 10,
+      end: 50,
+      locked: true
+    })
   })
 
   it('migrates legacy single exportRange into exportRanges', () => {

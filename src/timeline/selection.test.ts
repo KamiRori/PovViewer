@@ -57,8 +57,8 @@ describe('parseExportRanges', () => {
         { id: 'b', start: 5, end: 3 }
       ])
     ).toEqual([
-      { id: 'a', start: 1, end: 2 },
-      { id: 'b', start: 3, end: 5 }
+      { id: 'a', start: 1, end: 2, locked: false },
+      { id: 'b', start: 3, end: 5, locked: false }
     ])
   })
 

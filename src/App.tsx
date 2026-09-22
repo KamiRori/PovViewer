@@ -49,6 +49,7 @@ export function App() {
     addExportRange,
     updateExportRange,
     removeExportRange,
+    setExportRangeLocked,
     reorder,
     applySyncResults,
     clearSyncReport,
@@ -741,6 +742,7 @@ export function App() {
         onAddExportRange={addExportRange}
         onUpdateExportRange={updateExportRange}
         onRemoveExportRange={removeExportRange}
+        onSetExportRangeLocked={setExportRangeLocked}
         onReorder={reorder}
       />
       {dragging ? <div className="drop-overlay">松开以导入视频</div> : null}

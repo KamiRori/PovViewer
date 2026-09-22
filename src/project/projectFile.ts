@@ -55,7 +55,16 @@ export function serializeProject(povs: readonly POVRuntime[]): ProjectFileV1 {
       muted: pov.muted,
       playbackSource: pov.playbackSource,
       ...(pov.markerColor ? { markerColor: pov.markerColor } : {}),
-      ...(pov.exportRanges.length > 0 ? { exportRanges: pov.exportRanges } : {})
+      ...(pov.exportRanges.length > 0
+        ? {
+            exportRanges: pov.exportRanges.map(({ id, start, end, locked }) => ({
+              id,
+              start,
+              end,
+              ...(locked ? { locked: true as const } : {})
+            }))
+          }
+        : {})
     }))
   }
 }

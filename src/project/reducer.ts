@@ -40,6 +40,7 @@ export type ProjectAction =
   | { type: 'addExportRange'; id: string; range: TimelineSelection }
   | { type: 'updateExportRange'; id: string; selectionId: string; range: TimelineSelection }
   | { type: 'removeExportRange'; id: string; selectionId: string }
+  | { type: 'setExportRangeLocked'; id: string; selectionId: string; locked: boolean }
   | { type: 'reorder'; fromId: string; toId: string }
   | { type: 'applySync'; results: SyncResult[] }
   | { type: 'clearSyncReport' }
@@ -151,7 +152,7 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
           const origin = pov.exportRanges.find(
             (selection) => selection.id === action.selectionId
           )
-          if (!origin) return pov
+          if (!origin || origin.locked) return pov
           const wideRange = { start: -1e12, end: 1e12, duration: 2e12 }
           const next = constrainSelectionNoOverlap(
             action.range,
@@ -173,16 +174,35 @@ export function projectReducer(state: ProjectState, action: ProjectAction): Proj
     case 'removeExportRange':
       return {
         ...state,
-        povs: state.povs.map((pov) =>
-          pov.id === action.id
-            ? {
-                ...pov,
-                exportRanges: pov.exportRanges.filter(
-                  (selection) => selection.id !== action.selectionId
-                )
-              }
-            : pov
-        )
+        povs: state.povs.map((pov) => {
+          if (pov.id !== action.id) return pov
+          const target = pov.exportRanges.find(
+            (selection) => selection.id === action.selectionId
+          )
+          if (!target || target.locked) return pov
+          return {
+            ...pov,
+            exportRanges: pov.exportRanges.filter(
+              (selection) => selection.id !== action.selectionId
+            )
+          }
+        })
+      }
+    case 'setExportRangeLocked':
+      return {
+        ...state,
+        povs: state.povs.map((pov) => {
+          if (pov.id !== action.id) return pov
+          let changed = false
+          const exportRanges = pov.exportRanges.map((selection) => {
+            if (selection.id !== action.selectionId) return selection
+            const locked = action.locked
+            if (Boolean(selection.locked) === locked) return selection
+            changed = true
+            return { ...selection, locked }
+          })
+          return changed ? { ...pov, exportRanges } : pov
+        })
       }
     case 'reorder': {
       const povs = reorderPovsById(state.povs, action.fromId, action.toId)

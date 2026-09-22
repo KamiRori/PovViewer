@@ -120,4 +120,53 @@ describe('projectHistoryReducer', () => {
     ).toBe('updateExportRange:a:s1')
     expect(undoKey({ type: 'import', paths: [] })).toBeNull()
   })
+
+  it('blocks updates and removes while locked', () => {
+    let state = projectHistoryReducer(initialProjectHistoryState, {
+      type: 'loadProject',
+      povs: [pov('a')],
+      projectPath: null
+    })
+    state = projectHistoryReducer(state, {
+      type: 'addExportRange',
+      id: 'a',
+      range: { start: 2, end: 8 }
+    })
+    const selectionId = state.present.povs[0]!.exportRanges[0]!.id
+    state = projectHistoryReducer(state, {
+      type: 'setExportRangeLocked',
+      id: 'a',
+      selectionId,
+      locked: true
+    })
+    expect(state.present.povs[0]?.exportRanges[0]?.locked).toBe(true)
+
+    state = projectHistoryReducer(state, {
+      type: 'updateExportRange',
+      id: 'a',
+      selectionId,
+      range: { start: 3, end: 9 }
+    })
+    expect(state.present.povs[0]?.exportRanges[0]).toMatchObject({ start: 2, end: 8 })
+
+    state = projectHistoryReducer(state, {
+      type: 'removeExportRange',
+      id: 'a',
+      selectionId
+    })
+    expect(state.present.povs[0]?.exportRanges).toHaveLength(1)
+
+    state = projectHistoryReducer(state, {
+      type: 'setExportRangeLocked',
+      id: 'a',
+      selectionId,
+      locked: false
+    })
+    state = projectHistoryReducer(state, {
+      type: 'removeExportRange',
+      id: 'a',
+      selectionId
+    })
+    expect(state.present.povs[0]?.exportRanges).toHaveLength(0)
+  })
 })

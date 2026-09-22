@@ -43,7 +43,9 @@ interface TimelineTracksProps {
   onAddExportRange: (id: string, range: TimelineSelection) => void
   onUpdateExportRange: (id: string, selectionId: string, range: TimelineSelection) => void
   onRemoveExportRange: (id: string, selectionId: string) => void
+  onSetExportRangeLocked: (id: string, selectionId: string, locked: boolean) => void
   onReorder: (fromId: string, toId: string) => void
+  onViewportInteract?: (active: boolean) => void
   /** Override empty-state copy (e.g. when search/color filter hides all tracks). */
   emptyHint?: string
 }
@@ -87,7 +89,9 @@ export function TimelineTracks({
   onAddExportRange,
   onUpdateExportRange,
   onRemoveExportRange,
+  onSetExportRangeLocked,
   onReorder,
+  onViewportInteract,
   emptyHint
 }: TimelineTracksProps) {
   const tracksRef = useRef<HTMLDivElement>(null)
@@ -110,7 +114,8 @@ export function TimelineTracks({
   const isArmed = useArmedLookup()
   const view = useViewUi()
   const empty = range.duration <= 0 || povs.length === 0
-  const headPct = empty ? 0 : Math.min(100, Math.max(0, playheadPercent(masterTime, range)))
+  const headPct = empty ? null : playheadPercent(masterTime, range)
+  const playheadInView = headPct != null && headPct >= -1 && headPct <= 101
   const tickPlan = empty ? null : buildRulerTicks(range, 8)
   const activePov = activeId ? povs.find((pov) => pov.id === activeId) ?? null : null
 
@@ -247,7 +252,7 @@ export function TimelineTracks({
     if (!selectionId) return
     const pov = povs.find((entry) => entry.id === povId)
     const selection = pov?.exportRanges.find((entry) => entry.id === selectionId)
-    if (!selection) return
+    if (!selection || selection.locked) return
 
     dragRef.current = {
       mode,
@@ -419,7 +424,7 @@ export function TimelineTracks({
   const selectionCount = activePov?.exportRanges.length ?? 0
   const selectionHint =
     selectionCount > 0
-      ? `${activePov!.playerName} 已有 ${selectionCount} 个导出区间 · 左键定位 · 右键轨道/播放头创建 · 右键区间移除`
+      ? `${activePov!.playerName} 已有 ${selectionCount} 个导出区间 · 右键区间可锁定/移除`
       : activeId
         ? '左键点击/拖播放头定位 · 右键轨道创建导出区间 · 同轴不可重叠'
         : '左键定位时间 · 选中卡片后右键轨道可创建导出区间'
@@ -427,6 +432,12 @@ export function TimelineTracks({
   const menuPov =
     contextMenu?.kind === 'track'
       ? povs.find((pov) => pov.id === contextMenu.povId) ?? null
+      : contextMenu?.kind === 'selection'
+        ? povs.find((pov) => pov.id === contextMenu.povId) ?? null
+        : null
+  const menuSelection =
+    contextMenu?.kind === 'selection'
+      ? menuPov?.exportRanges.find((entry) => entry.id === contextMenu.selectionId) ?? null
       : null
   const canCreateAtMenu =
     contextMenu?.kind === 'track' && menuPov
@@ -528,6 +539,7 @@ export function TimelineTracks({
               viewport={viewport}
               disabled={disabled}
               onViewportChange={onViewportChange}
+              onViewportInteract={onViewportInteract}
               onScrub={onScrub}
               onCommitScrub={onCommitScrub}
             />
@@ -584,13 +596,15 @@ export function TimelineTracks({
                   ))}
                 </div>
 
-                <div
-                  className="timeline-playhead"
-                  style={{ left: `${headPct}%` }}
-                  title={`播放头 ${formatMasterTime(masterTime)}（左键拖拽或点击轨道定位 · 右键创建选区）`}
-                >
-                  <span className="timeline-playhead-cap" aria-hidden />
-                </div>
+                {playheadInView ? (
+                  <div
+                    className="timeline-playhead"
+                    style={{ left: `${headPct}%` }}
+                    title={`播放头 ${formatMasterTime(masterTime)}（左键拖拽或点击轨道定位 · 右键创建选区）`}
+                  >
+                    <span className="timeline-playhead-cap" aria-hidden />
+                  </div>
+                ) : null}
 
                 {povs.map((pov) => {
                   const ready = pov.metadataReady && Number.isFinite(pov.duration) && pov.duration > 0
@@ -608,12 +622,15 @@ export function TimelineTracks({
                     >
                       {pov.exportRanges.map((selection) => {
                         const selPct = selectionWindowPercent(selection, range)
+                        const locked = Boolean(selection.locked)
                         return (
                           <div
                             key={selection.id}
                             className={`timeline-selection${
                               selectionSpan(selection) <= 0 ? ' is-zero' : ''
-                            }${pov.id === activeId ? ' is-focused' : ''}${
+                            }${locked ? ' is-locked' : ''}${
+                              pov.id === activeId ? ' is-focused' : ''
+                            }${
                               pov.markerColor ? ` marker-${pov.markerColor}` : ' marker-default'
                             }`}
                             data-pov-id={pov.id}
@@ -623,25 +640,35 @@ export function TimelineTracks({
                               left: `${selPct.leftPct}%`,
                               width: `${selPct.widthPct}%`
                             }}
-                            title={`${pov.playerName} 导出区间 ${formatMasterTime(selection.start)} – ${formatMasterTime(selection.end)}`}
+                            title={
+                              locked
+                                ? `${pov.playerName} 导出区间（已锁定） ${formatMasterTime(selection.start)} – ${formatMasterTime(selection.end)}`
+                                : `${pov.playerName} 导出区间 ${formatMasterTime(selection.start)} – ${formatMasterTime(selection.end)}`
+                            }
                             onContextMenu={(event) =>
                               onSelectionContextMenu(event, pov.id, selection.id)
                             }
                           >
                             <span className="timeline-selection-cap is-start" aria-hidden />
                             <span className="timeline-selection-cap is-end" aria-hidden />
-                            <span
-                              className="timeline-selection-handle is-start"
-                              data-pov-id={pov.id}
-                              data-selection-id={selection.id}
-                              title="拖动修改入点"
-                            />
-                            <span
-                              className="timeline-selection-handle is-end"
-                              data-pov-id={pov.id}
-                              data-selection-id={selection.id}
-                              title="拖动修改出点"
-                            />
+                            {!locked ? (
+                              <>
+                                <span
+                                  className="timeline-selection-handle is-start"
+                                  data-pov-id={pov.id}
+                                  data-selection-id={selection.id}
+                                  title="拖动修改入点"
+                                />
+                                <span
+                                  className="timeline-selection-handle is-end"
+                                  data-pov-id={pov.id}
+                                  data-selection-id={selection.id}
+                                  title="拖动修改出点"
+                                />
+                              </>
+                            ) : (
+                              <span className="timeline-selection-lock" aria-hidden title="已锁定" />
+                            )}
                           </div>
                         )
                       })}
@@ -708,17 +735,39 @@ export function TimelineTracks({
               创建导出区间
             </button>
           ) : (
-            <button
-              type="button"
-              className="timeline-context-menu-item is-danger"
-              role="menuitem"
-              onClick={() => {
-                onRemoveExportRange(contextMenu.povId, contextMenu.selectionId)
-                closeContextMenu()
-              }}
-            >
-              移除导出区间
-            </button>
+            <>
+              <button
+                type="button"
+                className="timeline-context-menu-item"
+                role="menuitem"
+                onClick={() => {
+                  onSetExportRangeLocked(
+                    contextMenu.povId,
+                    contextMenu.selectionId,
+                    !menuSelection?.locked
+                  )
+                  closeContextMenu()
+                }}
+              >
+                {menuSelection?.locked ? '解锁选区' : '锁定选区'}
+              </button>
+              <button
+                type="button"
+                className="timeline-context-menu-item is-danger"
+                role="menuitem"
+                disabled={Boolean(menuSelection?.locked)}
+                title={
+                  menuSelection?.locked ? '请先解锁后再移除' : undefined
+                }
+                onClick={() => {
+                  if (menuSelection?.locked) return
+                  onRemoveExportRange(contextMenu.povId, contextMenu.selectionId)
+                  closeContextMenu()
+                }}
+              >
+                移除导出区间
+              </button>
+            </>
           )}
         </div>
       ) : null}
