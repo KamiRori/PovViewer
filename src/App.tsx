@@ -8,6 +8,7 @@ import { FeaturePerfReporter } from './player/FeaturePerfReporter'
 import { usePlaybackArmActions } from './player/playbackArm'
 import { useViewUi } from './player/viewUi'
 import { parseProjectJson, projectToJson } from './project/projectFile'
+import { PROJECT_AUTOSAVE_INTERVAL_MS, projectNeedsAutoSave } from './project/autoSave'
 import { useProject } from './project/store'
 import { parseSyncJson } from './sync/parseSync'
 import { usePlayback } from './timeline/store'
@@ -78,6 +79,12 @@ export function App() {
   const [dragging, setDragging] = useState(false)
   const [hint, setHint] = useState<string | null>(null)
   const dragDepthRef = useRef(0)
+  const lastSavedJsonRef = useRef<string | null>(null)
+  const saveLockRef = useRef(false)
+  const stateRef = useRef(state)
+  const blockAutoSaveRef = useRef(false)
+  stateRef.current = state
+  blockAutoSaveRef.current = busy || proxyBusy || exportBusy
   const visible = state.povs.filter((pov) => pov.enabled)
 
   useEffect(() => {
@@ -157,6 +164,31 @@ export function App() {
     }
   }
 
+  async function writeProjectFile(
+    target: string,
+    source: 'manual' | 'auto'
+  ): Promise<boolean> {
+    if (saveLockRef.current) return false
+    const json = projectToJson(stateRef.current.povs)
+    if (source === 'auto' && !projectNeedsAutoSave(target, json, lastSavedJsonRef.current)) {
+      return false
+    }
+    saveLockRef.current = true
+    try {
+      await window.povApi.writeTextFile(target, json)
+      setProjectPath(target)
+      lastSavedJsonRef.current = json
+      setHint(
+        source === 'auto'
+          ? `已自动保存 ${fileNameFromPath(target)}`
+          : `已保存 ${fileNameFromPath(target)}`
+      )
+      return true
+    } finally {
+      saveLockRef.current = false
+    }
+  }
+
   async function onSaveProject(): Promise<void> {
     setBusy(true)
     setHint(null)
@@ -166,9 +198,7 @@ export function App() {
         target = await window.povApi.saveJsonFile('project.json')
         if (!target) return
       }
-      await window.povApi.writeTextFile(target, projectToJson(state.povs))
-      setProjectPath(target)
-      setHint(`已保存 ${fileNameFromPath(target)}`)
+      await writeProjectFile(target, 'manual')
     } catch (error) {
       console.error('[project] save failed', error)
       setHint('保存项目失败')
@@ -202,6 +232,7 @@ export function App() {
       )
 
       loadProject(withMissing, filePath)
+      lastSavedJsonRef.current = projectToJson(withMissing)
       clearArms()
       view.exitFocus()
       view.setActiveId(null)
@@ -222,8 +253,24 @@ export function App() {
 
   const saveProjectRef = useRef(onSaveProject)
   const openProjectRef = useRef(onOpenProject)
+  const writeProjectFileRef = useRef(writeProjectFile)
   saveProjectRef.current = onSaveProject
   openProjectRef.current = onOpenProject
+  writeProjectFileRef.current = writeProjectFile
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      if (blockAutoSaveRef.current || saveLockRef.current) return
+      const { projectPath, povs } = stateRef.current
+      const json = projectToJson(povs)
+      if (!projectNeedsAutoSave(projectPath, json, lastSavedJsonRef.current)) return
+      void writeProjectFileRef.current(projectPath, 'auto').catch((error) => {
+        console.error('[project] autosave failed', error)
+        setHint('自动保存失败')
+      })
+    }, PROJECT_AUTOSAVE_INTERVAL_MS)
+    return () => window.clearInterval(timer)
+  }, [])
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {

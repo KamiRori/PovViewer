@@ -22,6 +22,7 @@ import {
   type TimelineSelection
 } from '../timeline/selection'
 import { formatMasterTime } from '../timeline/timeFormat'
+import { buildRulerTicks, formatRulerTickLabel } from '../timeline/rulerTicks'
 import { playheadPercent, timeFromRatio, trackSegmentLayout } from '../timeline/trackLayout'
 import type { TimelineViewport } from '../timeline/viewport'
 import { TimelineZoomBar, TimelineZoomResetButton } from './TimelineZoomBar'
@@ -52,16 +53,6 @@ type DragMode = 'scrub' | 'edge-start' | 'edge-end' | 'move'
 type ContextMenuState =
   | { kind: 'track'; x: number; y: number; povId: string; time: number }
   | { kind: 'selection'; x: number; y: number; povId: string; selectionId: string }
-
-function rulerMarks(range: TimelineRange): number[] {
-  const span = Math.max(range.duration, 0.001)
-  const steps = span <= 30 ? 6 : span <= 180 ? 8 : 10
-  const marks: number[] = []
-  for (let i = 0; i <= steps; i += 1) {
-    marks.push(range.start + (span * i) / steps)
-  }
-  return marks
-}
 
 function clampMenuPosition(x: number, y: number, width: number, height: number): { x: number; y: number } {
   const pad = 8
@@ -120,7 +111,7 @@ export function TimelineTracks({
   const view = useViewUi()
   const empty = range.duration <= 0 || povs.length === 0
   const headPct = empty ? 0 : Math.min(100, Math.max(0, playheadPercent(masterTime, range)))
-  const marks = empty ? [] : rulerMarks(range)
+  const tickPlan = empty ? null : buildRulerTicks(range, 8)
   const activePov = activeId ? povs.find((pov) => pov.id === activeId) ?? null : null
 
   function isShowing(id: string): boolean {
@@ -562,20 +553,35 @@ export function TimelineTracks({
                 onContextMenu={onTrackContextMenu}
               >
                 <div className="timeline-ruler-scale" aria-hidden>
-                  {marks.map((mark, index) => {
-                    const pct = playheadPercent(mark, range)
-                    const edge =
-                      index === 0 ? ' is-start' : index === marks.length - 1 ? ' is-end' : ''
+                  {tickPlan?.ticks.map((tick, index) => {
+                    const pct = playheadPercent(tick.time, range)
+                    const nearStart = pct <= 1
+                    const nearEnd = pct >= 99
+                    const edge = nearStart ? ' is-start' : nearEnd ? ' is-end' : ''
                     return (
                       <span
-                        key={`${mark}-${index}`}
-                        className={`timeline-ruler-mark${edge}`}
+                        key={`ruler-${tick.time}-${index}`}
+                        className={`timeline-ruler-mark${tick.major ? ' is-major' : ' is-minor'}${edge}`}
                         style={{ left: `${pct}%` }}
                       >
-                        {formatMasterTime(mark)}
+                        {tick.major ? (
+                          <span className="timeline-ruler-label">
+                            {formatRulerTickLabel(tick.time, tickPlan.majorStep)}
+                          </span>
+                        ) : null}
                       </span>
                     )
                   })}
+                </div>
+
+                <div className="timeline-tick-grid" aria-hidden>
+                  {tickPlan?.ticks.map((tick, index) => (
+                    <span
+                      key={`grid-${tick.time}-${index}`}
+                      className={`timeline-tick-line${tick.major ? ' is-major' : ''}`}
+                      style={{ left: `${playheadPercent(tick.time, range)}%` }}
+                    />
+                  ))}
                 </div>
 
                 <div

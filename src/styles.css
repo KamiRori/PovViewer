@@ -1288,25 +1288,91 @@ main::-webkit-scrollbar-thumb:hover {
   height: 16px;
   flex: 0 0 16px;
   border-bottom: 1px solid var(--line);
+  z-index: 2;
 }
 
 .timeline-ruler-mark {
   position: absolute;
   top: 0;
+  bottom: 0;
+  width: 0;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.timeline-ruler-mark::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+  background: rgba(232, 237, 247, 0.22);
+}
+
+.timeline-ruler-mark.is-minor::before {
+  height: 5px;
+}
+
+.timeline-ruler-mark.is-major::before {
+  height: 9px;
+  background: rgba(232, 237, 247, 0.42);
+}
+
+.timeline-ruler-label {
+  position: absolute;
+  top: 0;
+  left: 0;
   transform: translateX(-50%);
   color: var(--muted);
   font-size: 10px;
   font-variant-numeric: tabular-nums;
   white-space: nowrap;
-  pointer-events: none;
+  line-height: 1;
 }
 
 .timeline-ruler-mark.is-start {
-  transform: translateX(0);
+  transform: none;
+}
+
+.timeline-ruler-mark.is-start .timeline-ruler-label,
+.timeline-ruler-mark.is-start::before {
+  transform: none;
 }
 
 .timeline-ruler-mark.is-end {
+  transform: none;
+}
+
+.timeline-ruler-mark.is-end .timeline-ruler-label {
   transform: translateX(-100%);
+}
+
+.timeline-ruler-mark.is-end::before {
+  transform: none;
+}
+
+.timeline-tick-grid {
+  position: absolute;
+  top: 16px;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.timeline-tick-line {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  transform: translateX(-50%);
+  background: rgba(232, 237, 247, 0.06);
+}
+
+.timeline-tick-line.is-major {
+  background: rgba(232, 237, 247, 0.14);
 }
 
 .timeline-playhead {
@@ -1589,9 +1655,7 @@ main::-webkit-scrollbar-thumb:hover {
   position: relative;
   height: 22px;
   border-radius: 5px;
-  background:
-    linear-gradient(90deg, rgba(52, 59, 73, 0.55) 1px, transparent 1px) 0 0 / 10% 100%,
-    #12141a;
+  background: #12141a;
   border: 1px solid #2a3140;
   overflow: visible;
 }
@@ -1693,6 +1757,28 @@ main::-webkit-scrollbar-thumb:hover {
   inset: 8px 0 8px;
   z-index: 0;
   pointer-events: none;
+}
+
+.timeline-zoom-ticks {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+}
+
+.timeline-zoom-tick {
+  position: absolute;
+  top: 5px;
+  bottom: 5px;
+  width: 1px;
+  transform: translateX(-50%);
+  background: rgba(232, 237, 247, 0.1);
+}
+
+.timeline-zoom-tick.is-major {
+  top: 3px;
+  bottom: 3px;
+  background: rgba(232, 237, 247, 0.28);
 }
 
 .timeline-zoom-exports {

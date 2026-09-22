@@ -3,6 +3,7 @@ import { useArmedLookup } from '../player/playbackArm'
 import type { POVRuntime } from '../project/types'
 import type { TimelineRange } from '../timeline/range'
 import { formatMasterTime } from '../timeline/timeFormat'
+import { buildRulerTicks } from '../timeline/rulerTicks'
 import { playheadPercent, timeFromRatio, trackSegmentLayout } from '../timeline/trackLayout'
 import {
   clampViewport,
@@ -55,6 +56,7 @@ export function TimelineZoomBar({
   /** Full-span window cannot pan; keep handles only so seeking the playhead stays easy. */
   const isFullView =
     !empty && viewport.end - viewport.start >= Math.max(fullRange.duration, 0.001) * 0.985
+  const tickPlan = empty ? null : buildRulerTicks(fullRange, 6)
 
   function timeAtClientX(clientX: number): number {
     const node = trackRef.current
@@ -172,6 +174,16 @@ export function TimelineZoomBar({
             />
           )
         })}
+      </div>
+
+      <div className="timeline-zoom-ticks" aria-hidden>
+        {tickPlan?.ticks.map((tick, index) => (
+          <span
+            key={`zoom-tick-${tick.time}-${index}`}
+            className={`timeline-zoom-tick${tick.major ? ' is-major' : ''}`}
+            style={{ left: `${playheadPercent(tick.time, fullRange)}%` }}
+          />
+        ))}
       </div>
 
       <div className="timeline-zoom-exports" aria-hidden>

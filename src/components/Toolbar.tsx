@@ -240,7 +240,11 @@ export function Toolbar({
           <MenuItem
             disabled={busy}
             shortcut={`${mod}S`}
-            title={projectPath ?? '另存为 project.json'}
+            title={
+              projectPath
+                ? `${projectPath}（有改动时约每 30 秒自动保存）`
+                : '另存为 project.json'
+            }
             onClick={() => {
               onSaveProject()
             }}
