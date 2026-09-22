@@ -377,29 +377,67 @@ function registerIpc(): void {
     const list = paths.filter((entry): entry is string => typeof entry === 'string' && entry.trim() !== '')
     const total = list.length
     let completed = 0
+    const activeFractions = new Map<string, number>()
     const cacheDir = await proxyService.getProxiesDir()
-    const jobs = list.map(async (entry) => {
-      const status = await proxyService.ensurePreview(entry)
-      if (status.status === 'ready' && status.proxyPath) {
-        mediaRegistry.register(status.proxyPath)
-      }
-      completed += 1
+
+    const broadcast = (extra?: {
+      sourcePath?: string
+      status?: string
+      error?: string
+    }): void => {
+      let activeSum = 0
+      for (const value of activeFractions.values()) activeSum += value
+      const overallPercent =
+        total > 0 ? Math.min(99.5, ((completed + activeSum) / total) * 100) : 0
       const payload = {
         completed,
         total,
-        sourcePath: entry,
-        status: status.status,
+        sourcePath: extra?.sourcePath ?? '',
+        status: extra?.status ?? 'pending',
         cacheDir,
-        error: status.error
+        error: extra?.error,
+        overallPercent,
+        fileName: extra?.sourcePath ? basename(extra.sourcePath) : undefined
       }
       for (const window of BrowserWindow.getAllWindows()) {
         if (!window.isDestroyed()) {
           window.webContents.send(IpcChannel.proxyProgress, payload)
         }
       }
-      return status
+    }
+
+    broadcast({ status: 'starting' })
+    proxyService.setProgressHandler((progress) => {
+      if (progress.phase === 'start' || progress.phase === 'encode') {
+        activeFractions.set(progress.sourcePath, progress.fileFraction)
+      } else {
+        activeFractions.delete(progress.sourcePath)
+      }
+      broadcast({
+        sourcePath: progress.sourcePath,
+        status: progress.phase === 'error' ? 'error' : 'encoding'
+      })
     })
-    return Promise.all(jobs)
+
+    try {
+      const jobs = list.map(async (entry) => {
+        const status = await proxyService.ensurePreview(entry)
+        if (status.status === 'ready' && status.proxyPath) {
+          mediaRegistry.register(status.proxyPath)
+        }
+        activeFractions.delete(entry)
+        completed += 1
+        broadcast({
+          sourcePath: entry,
+          status: status.status,
+          error: status.error
+        })
+        return status
+      })
+      return await Promise.all(jobs)
+    } finally {
+      proxyService.setProgressHandler(null)
+    }
   })
 
   ipcMain.handle(IpcChannel.getProxyCacheDir, async () => proxyService.getProxiesDir())

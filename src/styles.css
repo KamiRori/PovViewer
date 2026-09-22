@@ -1355,12 +1355,12 @@ main::-webkit-scrollbar-thumb:hover {
   box-sizing: border-box;
   border: none;
   border-radius: 2px;
-  --sel-strong: #d6aa4a;
-  --sel-soft: rgba(196, 148, 58, 0.34);
-  --sel-softer: rgba(196, 148, 58, 0.14);
-  --sel-focus-strong: #ebc460;
-  --sel-focus-soft: rgba(214, 168, 64, 0.48);
-  --sel-focus-softer: rgba(214, 168, 64, 0.2);
+  --sel-strong: #e8edf7;
+  --sel-soft: rgba(232, 237, 247, 0.36);
+  --sel-softer: rgba(232, 237, 247, 0.14);
+  --sel-focus-strong: #ffffff;
+  --sel-focus-soft: rgba(255, 255, 255, 0.5);
+  --sel-focus-softer: rgba(255, 255, 255, 0.2);
   background:
     repeating-linear-gradient(
       -52deg,
@@ -1369,7 +1369,7 @@ main::-webkit-scrollbar-thumb:hover {
     );
   box-shadow:
     inset 0 0 0 1px var(--sel-strong),
-    inset 0 1px 0 rgba(255, 230, 160, 0.18);
+    inset 0 1px 0 rgba(255, 255, 255, 0.22);
   cursor: grab;
   touch-action: none;
   min-width: 0;
@@ -1385,7 +1385,7 @@ main::-webkit-scrollbar-thumb:hover {
     );
   box-shadow:
     inset 0 0 0 1px var(--sel-focus-strong),
-    inset 0 1px 0 rgba(255, 236, 180, 0.28);
+    inset 0 1px 0 rgba(255, 255, 255, 0.3);
 }
 
 .timeline-selection:active {
@@ -1610,8 +1610,8 @@ main::-webkit-scrollbar-thumb:hover {
   bottom: 3px;
   z-index: 1;
   border-radius: 3px;
-  background: linear-gradient(180deg, #3d5f98 0%, #2a4570 100%);
-  box-shadow: inset 0 0 0 1px rgba(168, 196, 255, 0.28);
+  background: linear-gradient(180deg, #3c4452 0%, #2e3542 100%);
+  box-shadow: inset 0 0 0 1px rgba(110, 120, 138, 0.25);
   pointer-events: none;
 }
 
@@ -1707,12 +1707,12 @@ main::-webkit-scrollbar-thumb:hover {
   top: 0;
   bottom: 0;
   border-radius: 2px;
-  --zoom-sel: #d6aa4a;
+  --zoom-sel: #e8edf7;
   background: color-mix(in srgb, var(--zoom-sel) 28%, transparent);
   box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--zoom-sel) 40%, transparent);
 }
 
-.timeline-zoom-export.marker-default { --zoom-sel: #d6aa4a; }
+.timeline-zoom-export.marker-default { --zoom-sel: #e8edf7; }
 .timeline-zoom-export.marker-red { --zoom-sel: #e45b5b; }
 .timeline-zoom-export.marker-orange { --zoom-sel: #e08a3a; }
 .timeline-zoom-export.marker-yellow { --zoom-sel: #d6b83a; }
@@ -1727,7 +1727,7 @@ main::-webkit-scrollbar-thumb:hover {
   top: 0;
   bottom: 0;
   border-radius: 2px;
-  background: #3a5688;
+  background: #38404e;
   opacity: 0.85;
 }
 
@@ -1749,8 +1749,24 @@ main::-webkit-scrollbar-thumb:hover {
   cursor: grab;
 }
 
+.timeline-zoom-window.is-full {
+  /* Let clicks fall through to the track for playhead seek; handles stay interactive. */
+  pointer-events: none;
+  cursor: inherit;
+  border-color: rgba(232, 237, 247, 0.35);
+  background: rgba(122, 162, 255, 0.06);
+}
+
+.timeline-zoom-window.is-full .timeline-zoom-handle {
+  pointer-events: auto;
+}
+
 .timeline-zoom-window:active {
   cursor: grabbing;
+}
+
+.timeline-zoom-window.is-full:active {
+  cursor: inherit;
 }
 
 .timeline-zoom-handle {

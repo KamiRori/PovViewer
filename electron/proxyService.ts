@@ -3,7 +3,6 @@ import { access, mkdir, stat } from 'node:fs/promises'
 import { cpus } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
-import { getFfmpegBinary } from './ffmpegBin'
 import { encodePreviewProxyFast, resolveJobParallelism } from './proxyEncode'
 
 export type ProxyKind = 'preview'
@@ -18,7 +17,14 @@ export interface ProxyStatus {
   error?: string
 }
 
-const PREVIEW_LABEL = 'preview-320x180-15fps-v2'
+export interface ProxyJobProgress {
+  sourcePath: string
+  phase: 'start' | 'encode' | 'done' | 'error'
+  /** 0–1 progress within the active file. */
+  fileFraction: number
+}
+
+const PREVIEW_LABEL = 'preview-320x180-15fps-v5'
 
 interface QueueItem {
   sourcePath: string
@@ -29,8 +35,7 @@ interface QueueItem {
 
 /**
  * Parallel ffmpeg file-jobs for intentional 「生成预览代理」.
- * Default: about half the logical CPUs as file-jobs so each long POV can
- * still slice across the remaining cores. Override with POV_PROXY_CONCURRENCY.
+ * Override with POV_PROXY_CONCURRENCY.
  */
 export function resolveProxyConcurrency(
   cpuCount = cpus().length,
@@ -39,8 +44,8 @@ export function resolveProxyConcurrency(
   const parsed = envValue != null && envValue.trim() !== '' ? Number.parseInt(envValue, 10) : NaN
   if (Number.isFinite(parsed) && parsed >= 1) return Math.min(64, parsed)
   const n = Number.isFinite(cpuCount) && cpuCount > 0 ? Math.floor(cpuCount) : 4
-  // Leave headroom for per-file segment parallelism on multi-hour OBS takes.
-  return Math.max(2, Math.min(64, Math.ceil(n / 2)))
+  // Prefer higher file parallelism; short segments make this safer than before.
+  return Math.max(1, Math.min(6, Math.ceil(n / 3)))
 }
 
 export class ProxyService {
@@ -52,11 +57,24 @@ export class ProxyService {
   private readonly concurrency: number
   private readonly cpuCount: number
   private dirReady: Promise<string> | null = null
+  private progressHandler: ((progress: ProxyJobProgress) => void) | null = null
 
   constructor(concurrency = resolveProxyConcurrency(), cpuCount = cpus().length) {
     this.concurrency = concurrency
     this.cpuCount = cpuCount > 0 ? cpuCount : 4
     console.log(`[proxy] encode concurrency = ${this.concurrency} (cpus=${this.cpuCount})`)
+  }
+
+  setProgressHandler(handler: ((progress: ProxyJobProgress) => void) | null): void {
+    this.progressHandler = handler
+  }
+
+  private emitProgress(progress: ProxyJobProgress): void {
+    try {
+      this.progressHandler?.(progress)
+    } catch (error) {
+      console.warn('[proxy] progress handler failed', error)
+    }
   }
 
   private cacheKey(sourcePath: string, kind: ProxyKind, size: number, mtimeMs: number): string {
@@ -221,8 +239,8 @@ export class ProxyService {
 
   private async runJob(item: QueueItem): Promise<void> {
     const key = this.statusKey(item.sourcePath, item.kind)
+    this.emitProgress({ sourcePath: item.sourcePath, phase: 'start', fileFraction: 0 })
     try {
-      const bin = await getFfmpegBinary()
       const s = await stat(item.sourcePath)
       const dir = await this.proxiesDir()
       const proxyPath = join(
@@ -230,12 +248,26 @@ export class ProxyService {
         `${this.cacheKey(item.sourcePath, item.kind, s.size, s.mtimeMs)}.mp4`
       )
 
-      const parallel = resolveJobParallelism(this.cpuCount, this.running, this.queue.length)
       const started = Date.now()
-      const stats = await encodePreviewProxyFast(bin, item.sourcePath, proxyPath, parallel)
+      let lastEmit = 0
+      const stats = await encodePreviewProxyFast(null, item.sourcePath, proxyPath, {
+        threads: resolveJobParallelism(this.cpuCount, this.running, this.queue.length),
+        cpuCount: this.cpuCount,
+        runningJobs: this.running,
+        onProgress: ({ fraction }) => {
+          const now = Date.now()
+          if (fraction < 1 && now - lastEmit < 400) return
+          lastEmit = now
+          this.emitProgress({
+            sourcePath: item.sourcePath,
+            phase: 'encode',
+            fileFraction: fraction
+          })
+        }
+      })
       console.log(
         `[proxy] ready ${item.sourcePath} in ${((Date.now() - started) / 1000).toFixed(1)}s ` +
-          `(segments=${stats.segments}, threads=${stats.threads}, duration=${stats.duration ?? '?'})`
+          `(encoder=${stats.encoder}, mode=${stats.mode}, segments=${stats.segments}, threads=${stats.threads}, duration=${stats.duration ?? '?'})`
       )
 
       const ready: ProxyStatus = {
@@ -245,6 +277,7 @@ export class ProxyService {
         proxyPath
       }
       this.statuses.set(key, ready)
+      this.emitProgress({ sourcePath: item.sourcePath, phase: 'done', fileFraction: 1 })
       item.resolve(ready)
       this.settleWaiters(key, ready)
     } catch (error) {
@@ -258,6 +291,7 @@ export class ProxyService {
         error: message
       }
       this.statuses.set(key, failed)
+      this.emitProgress({ sourcePath: item.sourcePath, phase: 'error', fileFraction: 0 })
       item.resolve(failed)
       this.settleWaiters(key, failed)
     }

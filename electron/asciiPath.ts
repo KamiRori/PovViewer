@@ -74,9 +74,14 @@ export interface AsciiAlias {
 /**
  * Give FFmpeg an ASCII-only path for a media file.
  * Order: as-is → hardlink in ASCII work root → Windows 8.3 short path.
+ * Never copies the media file (multi‑GB OBS takes would hang for hours).
  */
-export async function materializeAsciiInput(sourcePath: string, workRoot: string): Promise<AsciiAlias> {
-  if (!hasNonAscii(sourcePath)) {
+export async function materializeAsciiInput(
+  sourcePath: string,
+  workRoot: string,
+  options?: { force?: boolean }
+): Promise<AsciiAlias> {
+  if (!options?.force && !hasNonAscii(sourcePath)) {
     return { path: sourcePath, cleanup: async () => undefined }
   }
 
@@ -105,7 +110,7 @@ export async function materializeAsciiInput(sourcePath: string, workRoot: string
     return { path: short, cleanup: async () => undefined }
   }
 
-  // Last resort: hope the Unicode path works (may still fail on some ffmpeg builds).
+  // Last resort: hope the original path works (may still fail on some ffmpeg builds).
   console.warn('[path] no ASCII alias for', sourcePath)
   return { path: sourcePath, cleanup: async () => undefined }
 }

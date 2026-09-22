@@ -61,6 +61,8 @@ const povApi = {
       status: string
       cacheDir?: string
       error?: string
+      overallPercent?: number
+      fileName?: string
     }) => void
   ): (() => void) => {
     const handler = (
@@ -72,6 +74,8 @@ const povApi = {
         status: string
         cacheDir?: string
         error?: string
+        overallPercent?: number
+        fileName?: string
       }
     ): void => {
       listener(payload)

@@ -43,6 +43,8 @@ interface TimelineTracksProps {
   onUpdateExportRange: (id: string, selectionId: string, range: TimelineSelection) => void
   onRemoveExportRange: (id: string, selectionId: string) => void
   onReorder: (fromId: string, toId: string) => void
+  /** Override empty-state copy (e.g. when search/color filter hides all tracks). */
+  emptyHint?: string
 }
 
 type DragMode = 'scrub' | 'edge-start' | 'edge-end' | 'move'
@@ -94,7 +96,8 @@ export function TimelineTracks({
   onAddExportRange,
   onUpdateExportRange,
   onRemoveExportRange,
-  onReorder
+  onReorder,
+  emptyHint
 }: TimelineTracksProps) {
   const tracksRef = useRef<HTMLDivElement>(null)
   const labelsScrollRef = useRef<HTMLDivElement>(null)
@@ -540,7 +543,9 @@ export function TimelineTracks({
           </div>
 
           {empty ? (
-            <p className="timeline-tracks-empty">导入并读取到时长后，将在此显示每张卡片的时间段</p>
+            <p className="timeline-tracks-empty">
+              {emptyHint ?? '导入并读取到时长后，将在此显示每张卡片的时间段'}
+            </p>
           ) : (
             <div
               className="timeline-lanes-scroll"

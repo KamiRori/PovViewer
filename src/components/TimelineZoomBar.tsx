@@ -52,6 +52,9 @@ export function TimelineZoomBar({
     ? { leftPct: 0, widthPct: 100 }
     : viewportWindowPercent(viewport, fullRange)
   const headPct = empty ? 0 : Math.min(100, Math.max(0, playheadPercent(masterTime, fullRange)))
+  /** Full-span window cannot pan; keep handles only so seeking the playhead stays easy. */
+  const isFullView =
+    !empty && viewport.end - viewport.start >= Math.max(fullRange.duration, 0.001) * 0.985
 
   function timeAtClientX(clientX: number): number {
     const node = trackRef.current
@@ -66,7 +69,7 @@ export function TimelineZoomBar({
     if (target.closest('.timeline-zoom-handle.is-start')) return 'start'
     if (target.closest('.timeline-zoom-handle.is-end')) return 'end'
     if (target.closest('.timeline-zoom-playhead')) return 'seek'
-    if (target.closest('.timeline-zoom-window')) return 'pan'
+    if (target.closest('.timeline-zoom-window')) return isFullView ? 'seek' : 'pan'
     return 'seek'
   }
 
@@ -145,7 +148,11 @@ export function TimelineZoomBar({
       aria-valuemin={fullRange.start}
       aria-valuemax={fullRange.end}
       aria-valuenow={masterTime}
-      title="左键点击定位 · 拖中间平移 · 拉两端缩放 · 拖播放头定位"
+      title={
+        isFullView
+          ? '左键拖动定位播放头 · 拉两端缩放'
+          : '左键点击定位 · 拖中间平移 · 拉两端缩放 · 拖播放头定位'
+      }
       onPointerDown={onPointerDown}
       onPointerMove={onPointerMove}
       onPointerUp={endDrag}
@@ -192,9 +199,13 @@ export function TimelineZoomBar({
       </div>
 
       <div
-        className="timeline-zoom-window"
+        className={`timeline-zoom-window${isFullView ? ' is-full' : ''}`}
         style={{ left: `${windowPct.leftPct}%`, width: `${windowPct.widthPct}%` }}
-        title={`${formatMasterTime(viewport.start)} – ${formatMasterTime(viewport.end)}`}
+        title={
+          isFullView
+            ? `${formatMasterTime(viewport.start)} – ${formatMasterTime(viewport.end)}（拖两端缩放）`
+            : `${formatMasterTime(viewport.start)} – ${formatMasterTime(viewport.end)}`
+        }
       >
         <span className="timeline-zoom-handle is-start" title="拖动缩放起点" />
         <span className="timeline-zoom-handle is-end" title="拖动缩放终点" />

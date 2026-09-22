@@ -1,8 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { planProxySegments, resolveJobParallelism } from './proxyEncode'
+import {
+  parseFfmpegOutTime,
+  planProxySegments,
+  planProxySegmentsByMaxLength,
+  resolveJobParallelism
+} from './proxyEncode'
+import { resolveSegmentConcurrency, videoEncoderArgs } from './proxyEncoder'
 
 describe('resolveJobParallelism', () => {
-  it('gives all cores to a solitary job', () => {
+  it('gives many threads to a solitary CPU job', () => {
     expect(resolveJobParallelism(8, 1, 0)).toBe(8)
   })
 
@@ -13,6 +19,46 @@ describe('resolveJobParallelism', () => {
 
   it('ignores queued work (file concurrency already gates starts)', () => {
     expect(resolveJobParallelism(8, 1, 7)).toBe(8)
+  })
+})
+
+describe('resolveSegmentConcurrency', () => {
+  it('runs several CPU segment workers', () => {
+    expect(resolveSegmentConcurrency(16, 1, 'libx264')).toBe(8)
+    expect(resolveSegmentConcurrency(8, 2, 'libx264')).toBe(4)
+  })
+
+  it('serializes GPU segment workers', () => {
+    expect(resolveSegmentConcurrency(16, 1, 'h264_nvenc')).toBe(1)
+  })
+})
+
+describe('videoEncoderArgs', () => {
+  it('includes nvenc codec', () => {
+    expect(videoEncoderArgs('h264_nvenc').join(' ')).toContain('h264_nvenc')
+  })
+})
+
+describe('parseFfmpegOutTime', () => {
+  it('parses ffmpeg time stamps', () => {
+    expect(parseFfmpegOutTime('frame=  10 fps=30 time=00:01:30.50 bitrate=N/A')).toBeCloseTo(
+      90.5,
+      5
+    )
+    expect(parseFfmpegOutTime('no time here')).toBeNull()
+  })
+})
+
+describe('planProxySegmentsByMaxLength', () => {
+  it('keeps short clips whole', () => {
+    expect(planProxySegmentsByMaxLength(120, 300)).toEqual([{ start: 0, duration: 120 }])
+  })
+
+  it('splits long clips into capped chunks', () => {
+    const parts = planProxySegmentsByMaxLength(3600, 600)
+    expect(parts.length).toBe(6)
+    const covered = parts.reduce((sum, part) => sum + part.duration, 0)
+    expect(covered).toBeCloseTo(3600, 5)
   })
 })
 

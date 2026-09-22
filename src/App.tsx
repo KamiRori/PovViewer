@@ -81,11 +81,23 @@ export function App() {
   const visible = state.povs.filter((pov) => pov.enabled)
 
   useEffect(() => {
-    return window.povApi.onProxyProgress(({ completed, total, cacheDir, status, error }) => {
-      const where = cacheDir ? ` → ${cacheDir}` : ''
-      const detail = status === 'error' && error ? `（失败：${error.slice(0, 80)}）` : ''
-      setHint(`正在生成网格预览代理（${completed}/${total}）${where}${detail}`)
-    })
+    return window.povApi.onProxyProgress(
+      ({ completed, total, cacheDir, status, error, overallPercent, fileName }) => {
+        const percent =
+          typeof overallPercent === 'number' && Number.isFinite(overallPercent)
+            ? overallPercent
+            : total > 0
+              ? (completed / total) * 100
+              : 0
+        const percentText = Math.min(100, Math.max(0, percent)).toFixed(2)
+        const where = cacheDir ? ` → ${cacheDir}` : ''
+        const current = fileName ? ` · ${fileName}` : ''
+        const detail = status === 'error' && error ? `（失败：${error.slice(0, 80)}）` : ''
+        setHint(
+          `正在生成网格预览代理 ${percentText}%（${completed}/${total}）${current}${where}${detail}`
+        )
+      }
+    )
   }, [])
 
   useEffect(() => {
@@ -322,8 +334,8 @@ export function App() {
     }
     setHint(
       cacheDir
-        ? `正在生成网格预览代理（0/${paths.length}）→ ${cacheDir}`
-        : `正在生成网格预览代理（0/${paths.length}）…`
+        ? `正在生成网格预览代理 0.00%（0/${paths.length}）→ ${cacheDir}（编码中写入，长视频需较长时间）`
+        : `正在生成网格预览代理 0.00%（0/${paths.length}）…（编码中写入，长视频需较长时间）`
     )
     try {
       const results = await window.povApi.ensurePreviewProxies(paths)

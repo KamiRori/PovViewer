@@ -7,6 +7,7 @@ import {
 } from '../player/decodeBudget'
 import { useViewUi } from '../player/viewUi'
 import { type PreviewQualityPreset, usePreviewQuality } from '../player/previewQuality'
+import { matchesPovQuery } from '../project/markerColor'
 import type { POVRuntime } from '../project/types'
 import { PLAYBACK_RATES, type PlaybackRate } from '../timeline/playbackMath'
 import { formatMasterTime } from '../timeline/timeFormat'
@@ -88,6 +89,14 @@ export function TimelineBar({
   const budget = useDecodeBudget()
   const liveStats = useLiveDecodeStats()
   const view = useViewUi()
+  const filteredPovs = povs.filter((pov) =>
+    matchesPovQuery(
+      { playerName: pov.playerName, markerColor: pov.markerColor },
+      view.query,
+      view.markerFilter
+    )
+  )
+  const filterActive = view.query.trim() !== '' || view.markerFilter !== null
   const [panelHeight, setPanelHeight] = useState(PANEL_HEIGHT_DEFAULT)
   const [viewport, setViewport] = useState<TimelineViewport>(() => fullViewport(range))
   const resizeRef = useRef<{ pointerId: number; startY: number; startHeight: number } | null>(null)
@@ -187,13 +196,18 @@ export function TimelineBar({
       </div>
 
       <TimelineTracks
-        povs={povs}
+        povs={filteredPovs}
         masterTime={masterTime}
         range={viewRange}
         fullRange={range}
         viewport={clampedViewport}
         disabled={disabled}
         activeId={view.activeId}
+        emptyHint={
+          filterActive && filteredPovs.length === 0 && povs.length > 0
+            ? '当前筛选没有匹配的时间轴'
+            : undefined
+        }
         onViewportChange={setViewport}
         onScrub={onScrub}
         onCommitScrub={onCommitScrub}

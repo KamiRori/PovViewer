@@ -81,6 +81,8 @@ export interface PovApi {
       status: string
       cacheDir?: string
       error?: string
+      overallPercent?: number
+      fileName?: string
     }) => void
   ) => () => void
   getProxyCacheDir: () => Promise<string>
